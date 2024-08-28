@@ -13,7 +13,8 @@ from datasets.utils.transforms import (
 )
 import tonic
 from tonic.transforms import ToFrame
-
+import hydra
+import os
 
 class SSCLDM(pl.LightningDataModule):
     def __init__(
@@ -31,6 +32,9 @@ class SSCLDM(pl.LightningDataModule):
         super().__init__()
         # workaround in order to use the same training loop
         # for classification and context processing
+        if not os.path.isabs(data_path):
+            cwd = hydra.utils.get_original_cwd()
+            data_path = os.path.abspath(os.path.join(cwd, data_path))
         self.data_path = data_path
         self.spatial_factor = spatial_factor
         self.time_factor = time_factor
