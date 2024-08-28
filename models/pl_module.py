@@ -6,6 +6,7 @@ from torch.nn import CrossEntropyLoss, MSELoss
 from omegaconf import DictConfig
 from pytorch_lightning.utilities import grad_norm
 
+from functional.loss import get_per_layer_spike_probs
 from models.alif import EFAdLIF, SEAdLIF
 from models.li import LI
 from models.lif import LIF
@@ -59,28 +60,44 @@ class MLPSNN(pl.LightningModule):
     # @torch.compile
     def forward(
         self, inputs: torch.Tensor) -> tuple[torch.Tensor, list[torch.Tensor]]:
+        self.states = []
         s1 = self.l1.initial_state(inputs.shape[0], inputs.device)
+        s1_list = [s1]
+        
         s_out = self.out_layer.initial_state(inputs.shape[0], inputs.device)
+        s_out_list = [s_out,]
         if self.two_layers:
             s2 = self.l2.initial_state(inputs.shape[0], inputs.device)
+            s2_list = [s2,]
         out_sequence = []
         single_step_prediction_limit = int(math.ceil(inputs.shape[1] * 0.5))
-
+        
         # Iterate over each time step in the data
         for t, x_t in enumerate(inputs.unbind(1)):
-
             # Auto-regression for oscillator task
             if self.auto_regression and t >= single_step_prediction_limit:
                 x_t = out.detach()
             out, s1 = self.l1(x_t, s1)
+            s1_list.append(s1)
             out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
             if self.two_layers:
                 out, s2 = self.l2(out, s2)
                 out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
+                s2_list.append(s2)
             out, s_out = self.out_layer(out, s_out)
+            s_out_list.append(s_out)
             # out[:,0] += 100
             out_sequence.append(out)
-            
+        # s_list a list of tuples [(u_0, z_0, w_0), (u_1, z_1, w_1), ..., (u_T, z_T, w_T)]
+        # we tranform it a Tensor of tensor Tensor([Tensor(u_0, ..., u_T), Tensor(z_0, ..., z_T), Tensor(w_0, ..., w_T)])
+        # of shape (S, B, T, N) S: number of states, B: number of batch, T: number of time-steps, N: number of neurons
+        
+        s1_list = torch.stack([torch.stack(x, dim=1) for x in zip(*s1_list)], dim=0)
+        self.states.append(s1_list)
+        if self.two_layers:
+            s2_list = torch.stack([torch.stack(x, dim=1) for x in zip(*s2_list)], dim=0)
+        s_out_list = torch.stack([torch.stack(x, dim=1) for x in zip(*s_out_list)], dim=0).unsqueeze(0)
+        self.states.append(s_out_list)
         return torch.stack(out_sequence, dim=1)
 
     def on_train_batch_end(self, outputs, batch, batch_idx: int):
@@ -247,6 +264,37 @@ class MLPSNN(pl.LightningModule):
             self.val_metric,
             prefix="val_",
         )
+        # report statistics (weights and spiking distribution) and plot an example of
+        # model behavior against a random input
+        if batch_idx == 0:
+            # determine a random example to visualized
+            spike_probabilities = get_per_layer_spike_probs(
+                self.states,
+                block_idx,
+            )
+            rnd_batch_idx = torch.randint(0, self.batch_size, size=()).item()
+            prev_layer_input = inputs[rnd_batch_idx]
+            layers = [self.l1,]
+            if self.two_layers:
+                layers.append(self.l2)
+            layers.append(self.out_layer)
+            for layer, module in enumerate(layers):
+                if hasattr(module, "layer_stats"):
+                    module.layer_stats(
+                        logger=self.logger,
+                        epoch_step=self.current_epoch,
+                        inputs=prev_layer_input,
+                        states=self.states[layer][:, rnd_batch_idx],
+                        targets=targets[rnd_batch_idx],
+                        layer_idx=layer,
+                        block_idx=block_idx[rnd_batch_idx],
+                        spike_probabilities=spike_probabilities[layer]
+                        if len(spike_probabilities) > layer
+                        else None,
+                        output_size=self.output_size
+                    )
+                    if layer < len(layers) - 1:
+                        prev_layer_input = self.states[layer][1, rnd_batch_idx]
 
         return loss
 

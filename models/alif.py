@@ -4,9 +4,10 @@ from torch.nn import Module
 from torch import Tensor
 from torch.nn.parameter import Parameter
 import torch.nn.functional as F
-from models.helpers import SLAYER
+from models.helpers import SLAYER, get_event_indices, save_distributions_to_aim, save_fig_to_aim
 from module.tau_trainers import TauTrainer, get_tau_trainer_class
 from omegaconf import DictConfig
+import matplotlib.pyplot as plt
 
 class EFAdLIF(Module):
     __constants__ = ["in_features", "out_features"]
@@ -148,6 +149,65 @@ class EFAdLIF(Module):
             + (1.0 - decay_w) * (self.a * u_tm1 + self.b * z_tm1) * self.q
         )
         return z_t.clone(), (u_t, z_t, w_t)
+    
+    @staticmethod
+    def plot_states(layer_idx, inputs, states):
+        figure, axes = plt.subplots(
+        nrows=4, ncols=1, sharex='all', figsize=(8, 11))
+        inputs = inputs.cpu().detach().numpy()
+        states = states.cpu().detach().numpy()        
+        axes[0].eventplot(get_event_indices(inputs.T), color='black', orientation='horizontal')
+        axes[0].set_ylabel('input')
+        axes[1].plot(states[0])
+        axes[1].set_ylabel("v_t")
+        axes[2].plot(states[2])
+        axes[2].set_ylabel("b_t")
+        axes[3].eventplot(get_event_indices(states[1].T), color='black', orientation='horizontal')
+        axes[3].set_ylabel("z_t/output")
+        nb_spikes_str = str(states[1].sum())
+        figure.suptitle(f"Layer {layer_idx}\n Nb spikes: {nb_spikes_str},")
+        plt.close(figure)
+        return figure
+
+    def layer_stats(self, layer_idx: int, logger, epoch_step: int, spike_probabilities: torch.Tensor,
+                    inputs: torch.Tensor, states: torch.Tensor, **kwargs):
+        """Generate statistisc from the layer weights and a plot of the layer dynamics for a random task example
+        Args:
+            layer_idx (int): index for the layer in the hierarchy
+            logger (_type_): aim logger reference
+            epoch_step (int): epoch  
+            spike_probability (torch.Tensor): spike probability for each neurons
+            inputs (torch.Tensor): random example 
+            states (torch.Tensor): states associated to the computation of the random example
+        """
+
+        save_fig_to_aim(
+            logger=logger,
+            name=f"{layer_idx}_Activity",
+            figure=EFAdLIF.plot_states(layer_idx, inputs, states),
+            epoch_step=epoch_step,
+        )
+        
+        distributions = [("soma_tau", self.tau_u_trainer.get_tau().cpu().detach().numpy()),
+                         ("soma_weights", self.weight.cpu().detach().numpy()),
+                         ("adapt_tau", self.tau_w_trainer.get_tau().cpu().detach().numpy()),
+                         ("spike_prob", spike_probabilities.cpu().detach().numpy()),
+                         ("a", self.a.cpu().detach().numpy()),
+                        ("b", self.b.cpu().detach().numpy()),
+                         ("bias", self.bias.cpu().detach().numpy())
+                        ]
+
+        if self.use_recurrent:
+            distributions.append(
+                ("recurrent_weights", self.recurrent.cpu().detach().numpy())
+            
+            )
+        save_distributions_to_aim(
+            logger=logger,
+            distributions=distributions,
+            name=f"{layer_idx}",
+            epoch_step=epoch_step,
+        )
     
 class SEAdLIF(EFAdLIF):
     def forward(

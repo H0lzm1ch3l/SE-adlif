@@ -12,7 +12,8 @@ import tonic
 from tonic.datasets.hsd import SHD
 from torch.utils import data
 from tonic.transforms import ToFrame
-
+import hydra
+import os
 
 """ The following class is a wrapper for the SHD dataset with a block_idx (see Readme.md) """
 
@@ -61,6 +62,11 @@ class SHDLDM(pl.LightningDataModule):
         super().__init__()
         # workaround in order to use the same training loop
         # for classification and context processing
+        
+        if not os.path.isabs(data_path):
+            cwd = hydra.utils.get_original_cwd()
+            data_path = os.path.abspath(os.path.join(cwd, data_path))
+            
         self.data_path = data_path
         self.spatial_factor = spatial_factor
         self.time_factor = time_factor

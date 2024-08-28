@@ -13,6 +13,7 @@ import numpy as np
 
 import scipy.io
 import torch
+import hydra
 
 
 def convert_dataset_wtime(mat_data):
@@ -44,6 +45,9 @@ class ECGLDM(pl.LightningDataModule):
         num_classes: int = 6,  # for hydra
     ) -> None:
         super().__init__()
+        if not os.path.isabs(data_path):
+            cwd = hydra.utils.get_original_cwd()
+            data_path = os.path.abspath(os.path.join(cwd, data_path))
         self.data_path = data_path
         self.cache_root = data_path if cache_root is None else cache_root
         self.valid_fraction = valid_fraction

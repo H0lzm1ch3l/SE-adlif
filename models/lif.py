@@ -1,6 +1,6 @@
 
 from typing import Optional
-from models.helpers import SLAYER
+from models.helpers import SLAYER, get_event_indices, save_distributions_to_aim, save_fig_to_aim
 import torch
 import torch.nn.functional as F
 from torch.nn import Module
@@ -10,20 +10,7 @@ import os
 
 from module.tau_trainers import TauTrainer, get_tau_trainer_class
 from omegaconf import DictConfig
-# TODO: remove this comment
-# what was removed:
-# any tracking hook for ploting
-# initialization method: as we use the same things every time
-# use bias: as we always use bias
-# what was kept:
-# tau_mapping: nice encapsulation 
-# use_recurrent: some experiments compare removing the recurrent connection 
-# keeping this possibility is necessary to reproduce results
-# what was modify:
-# hardcoded slayer as "gradient injection"
-
-os.environ["TORCH_LOGS"] = "+dynamo"
-os.environ["TORCHDYNAMO_VERBOSE"] = "1"
+import matplotlib.pyplot as plt
 
 class LIF(Module):
     __constants__ = ["in_features", "out_features"]
@@ -113,3 +100,69 @@ class LIF(Module):
 
     def apply_parameter_constraints(self):
         self.tau_u_trainer.apply_parameter_constraints()
+    
+    @staticmethod
+    def plot_states(layer_idx, inputs, states):
+        figure, axes = plt.subplots(nrows=3, ncols=1, sharex="all", figsize=(8, 11))
+        inputs = inputs.cpu().detach().numpy()
+        states = states.cpu().detach().numpy()
+        axes[0].eventplot(
+            get_event_indices(inputs.T), color="black", orientation="horizontal"
+        )
+        axes[0].set_ylabel("input")
+        axes[1].plot(states[0])
+        axes[1].set_ylabel("v_t")
+        axes[2].eventplot(
+            get_event_indices(states[1].T), color="black", orientation="horizontal"
+        )
+        axes[2].set_ylabel("z_t/output")
+        nb_spikes_str = str(states[1].sum())
+        figure.suptitle(f"Layer {layer_idx}\n Nb spikes: {nb_spikes_str},")
+        plt.close(figure)
+        return figure
+
+    @torch.jit.ignore
+    def layer_stats(
+        self,
+        layer_idx: int,
+        logger,
+        epoch_step: int,
+        spike_probabilities: torch.Tensor,
+        inputs: torch.Tensor,
+        states: torch.Tensor,
+        **kwargs,
+    ):
+        """Generate statistisc from the layer weights and a plot of the layer dynamics for a random task example
+        Args:
+            layer_idx (int): index for the layer in the hierarchy
+            logger (_type_): aim logger reference
+            epoch_step (int): epoch
+            spike_probability (torch.Tensor): spike probability for each neurons
+            inputs (torch.Tensor): random example
+            states (torch.Tensor): states associated to the computation of the random example
+        """
+
+        save_fig_to_aim(
+            logger=logger,
+            name=f"{layer_idx}_Activity",
+            figure=LIF.plot_states(layer_idx, inputs, states),
+            epoch_step=epoch_step,
+        )
+
+        distributions = [
+            ("soma_tau", self.tau_u_trainer.get_tau().cpu().detach().numpy()),
+            ("soma_weights", self.weight.cpu().detach().numpy()),
+            ("spike_prob", spike_probabilities.cpu().detach().numpy()),
+            ("bias", self.bias.cpu().detach().numpy()),
+        ]
+
+        if self.use_recurrent:
+            distributions.append(
+                ("recurrent_weights", self.recurrent.cpu().detach().numpy())
+            )
+        save_distributions_to_aim(
+            logger=logger,
+            distributions=distributions,
+            name=f"{layer_idx}",
+            epoch_step=epoch_step,
+        )
