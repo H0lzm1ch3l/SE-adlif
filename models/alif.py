@@ -154,14 +154,19 @@ class EFAdLIF(Module):
     def plot_states(layer_idx, inputs, states):
         figure, axes = plt.subplots(
         nrows=4, ncols=1, sharex='all', figsize=(8, 11))
+        is_events = torch.all(inputs == inputs.round())
+
         inputs = inputs.cpu().detach().numpy()
-        states = states.cpu().detach().numpy()        
-        axes[0].eventplot(get_event_indices(inputs.T), color='black', orientation='horizontal')
+        states = states.cpu().detach().numpy()
+        if is_events:
+            axes[0].eventplot(get_event_indices(inputs.T), color='black', orientation='horizontal')
+        else:
+            axes[0].plot(inputs)
         axes[0].set_ylabel('input')
         axes[1].plot(states[0])
-        axes[1].set_ylabel("v_t")
+        axes[1].set_ylabel("u_t")
         axes[2].plot(states[2])
-        axes[2].set_ylabel("b_t")
+        axes[2].set_ylabel("w_t")
         axes[3].eventplot(get_event_indices(states[1].T), color='black', orientation='horizontal')
         axes[3].set_ylabel("z_t/output")
         nb_spikes_str = str(states[1].sum())

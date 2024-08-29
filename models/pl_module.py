@@ -92,11 +92,12 @@ class MLPSNN(pl.LightningModule):
         # we tranform it a Tensor of tensor Tensor([Tensor(u_0, ..., u_T), Tensor(z_0, ..., z_T), Tensor(w_0, ..., w_T)])
         # of shape (S, B, T, N) S: number of states, B: number of batch, T: number of time-steps, N: number of neurons
         
-        s1_list = torch.stack([torch.stack(x, dim=1) for x in zip(*s1_list)], dim=0)
+        s1_list = torch.stack([torch.stack(x, dim=-2) for x in zip(*s1_list)], dim=0)
         self.states.append(s1_list)
         if self.two_layers:
-            s2_list = torch.stack([torch.stack(x, dim=1) for x in zip(*s2_list)], dim=0)
-        s_out_list = torch.stack([torch.stack(x, dim=1) for x in zip(*s_out_list)], dim=0).unsqueeze(0)
+            s2_list = torch.stack([torch.stack(x, dim=-2) for x in zip(*s2_list)], dim=0)
+        s_out_list = torch.stack([torch.stack(x, dim=-2) for x in zip(*s_out_list)], dim=0)
+        
         self.states.append(s_out_list)
         return torch.stack(out_sequence, dim=1)
 
@@ -142,6 +143,7 @@ class MLPSNN(pl.LightningModule):
                 reduce="mean",
                 include_self=False,
             )
+            block_idx = block_idx.unsqueeze(-1)
             block_output = block_output[:, 1]
             outputs_reduce = outputs
             loss = block_output.mean()
@@ -272,7 +274,7 @@ class MLPSNN(pl.LightningModule):
                 self.states,
                 block_idx,
             )
-            rnd_batch_idx = torch.randint(0, self.batch_size, size=()).item()
+            rnd_batch_idx = torch.randint(0, inputs.shape[0], size=()).item()
             prev_layer_input = inputs[rnd_batch_idx]
             layers = [self.l1,]
             if self.two_layers:
@@ -291,7 +293,8 @@ class MLPSNN(pl.LightningModule):
                         spike_probabilities=spike_probabilities[layer]
                         if len(spike_probabilities) > layer
                         else None,
-                        output_size=self.output_size
+                        output_size=self.output_size,
+                        auto_regression=self.auto_regression
                     )
                     if layer < len(layers) - 1:
                         prev_layer_input = self.states[layer][1, rnd_batch_idx]
