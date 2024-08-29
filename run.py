@@ -6,7 +6,6 @@ import logging
 from models.pl_module import MLPSNN
 
 from pytorch_lightning.strategies import SingleDeviceStrategy
-from aim.pytorch_lightning import AimLogger
 import os
 import matplotlib.pyplot as plt
 import matplotlib
