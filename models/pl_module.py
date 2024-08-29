@@ -345,6 +345,10 @@ class MLPSNN(pl.LightningModule):
         self.val_metric = metrics.clone(prefix="val_")
         self.test_metric = metrics.clone(prefix="test_")
 
+    def on_before_optimizer_step(self, optimizer) -> None:
+        # log weights gradient norm
+        self.log_dict(grad_norm(self, norm_type=2))
+
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(params=self.parameters(), lr=self.lr)
 
