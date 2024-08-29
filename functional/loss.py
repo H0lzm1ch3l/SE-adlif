@@ -34,8 +34,6 @@ def get_spike_prob(z, block_idx):
     spike_proba_per_block = torch.zeros(
         size=(z.shape[0], 2, z.shape[2]), device=z.device
     )
-    print(z.shape)
-    print(block_idx.shape)
     # determined all non-padded time-steps
     # assuming that padded time-steps are always summed to block_idx[:, 0]
     padded_timesteps_mask = (block_idx != torch.tensor(0)).long()
