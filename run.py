@@ -8,6 +8,11 @@ from models.pl_module import MLPSNN
 from pytorch_lightning.strategies import SingleDeviceStrategy
 from aim.pytorch_lightning import AimLogger
 import os
+import matplotlib.pyplot as plt
+import matplotlib
+colors = matplotlib.colormaps.get_cmap('tab20').colors + matplotlib.colormaps.get_cmap('Set1').colors
+plt.rcParams['axes.prop_cycle'] = plt.cycler(color=colors)
+
 # Main entry point. We use Hydra (https://hydra.cc) for configuration management. Note, that Hydra changes the working directory, such that each run gets a unique directory.
 
 @hydra.main(config_path="config", config_name="main", version_base=None)

@@ -68,47 +68,56 @@ class LI(Module):
     ) -> Tensor:
         size = (batch_size, self.out_features)
         u = torch.zeros(size=size, device=device, dtype=torch.float, requires_grad=True)
-        return u
+        return (u,)
 
     def forward(self, input_tensor: Tensor, states: Tensor) -> Tuple[Tensor, Tensor]:
-        u_tm1 = states
+        u_tm1, = states
         decay_u = self.tau_u_trainer.get_decay()
         current = F.linear(input_tensor, self.weight, self.bias)
         u_t = decay_u * u_tm1 + (1.0 - decay_u) * current
-        return u_t.clone(), u_t
+        return u_t.clone(), (u_t,)
 
     def apply_parameter_constraints(self):
         self.tau_u_trainer.apply_parameter_constraints()
-    #TODO: not working for now
-    # @staticmethod
-    # def plot_states(layer_idx, inputs, states, targets, block_idx, output_size):
-    #     # the li layer is always assumed to be the output layer of a classification
-    #     # problem the argmax of the state is thus compared this respect to the target
-    #     # if the problem would be a regression this code should be changed
-
-    #     figure, axes = plt.subplots(nrows=3, ncols=1, sharex="all", figsize=(8, 11))
-    #     inputs = inputs.cpu().detach().numpy()
-    #     # remove the first states as it's the initialization states
-    #     states = states[:, 1:].cpu().detach().numpy()
-    #     targets = targets.cpu().detach().numpy()
-    #     block_idx = block_idx.cpu().detach().numpy()
-    #     targets_in_time = targets[block_idx]
-
-    #     axes[0].eventplot(
-    #         get_event_indices(inputs.T), color="black", orientation="horizontal"
-    #     )
-    #     axes[0].set_ylabel("Input")
-    #     axes[1].plot(states[0])
-    #     axes[1].set_ylabel("v_t/output")
-    #     pred = np.argmax(states[0], -1)
-    #     axes[2].plot(pred, color="blue", label="Prediction")
-    #     axes[2].plot(targets_in_time, color="red", label="Target")
-    #     axes[2].legend()
-    #     axes[2].set_ylabel("Class")
-    #     figure.suptitle(f"Layer {layer_idx}\n")
-    #     plt.tight_layout()
-    #     plt.close(figure)
-    #     return figure
+    @staticmethod
+    def plot_states(layer_idx, inputs, states, targets, block_idx, output_size, auto_regression):
+        figure, axes = plt.subplots(nrows=3, ncols=1, sharex="all", figsize=(8, 11))
+        is_events = torch.all(inputs == inputs.round())
+        inputs = inputs.cpu().detach().numpy()
+        # remove the first states as it's the initialization states
+        states = states[:, 1:].cpu().detach().numpy()
+        targets = targets.cpu().detach().numpy()
+        
+        block_idx = block_idx.cpu().detach().numpy()
+        if auto_regression:
+            targets_in_time = targets[1:]
+        else:
+            targets_in_time = targets[block_idx]
+        
+        if is_events:
+            axes[0].eventplot(get_event_indices(inputs.T), color='black', orientation='horizontal')
+        else:
+            axes[0].plot(inputs)
+        axes[0].set_ylabel("Input")
+        axes[1].plot(states[0])
+        axes[1].set_ylabel("v_t/output")
+        if auto_regression:
+            mse = ((states[0] - targets_in_time)**2).mean(-1)
+            axes[2].plot(mse, color='blue', label='mse')
+            x_min, x_max = axes[2].get_xlim()  
+            x_half = (x_min + x_max) / 2  
+            axes[2].axvline(x=x_half, color='red', linestyle='--', linewidth=2, label='Auto-regression start')
+            axes[2].set_ylabel("MSE")
+        else:
+            pred = np.argmax(states[0], -1)
+            axes[2].plot(pred, color="blue", label="Prediction")
+            axes[2].plot(targets_in_time, color="red", label="Target")
+            axes[2].set_ylabel("Class")
+        axes[2].legend()
+        figure.suptitle(f"Layer {layer_idx}\n")
+        plt.tight_layout()
+        plt.close(figure)
+        return figure
     
     def layer_stats(
             self,
@@ -133,15 +142,14 @@ class LI(Module):
                 targets (torch.Tensor): target associated to the random example
                 block_idx (torch.Tensor): block indices associated to the random example
             """
-            #TODO: not working for now
-            # save_fig_to_aim(
-            #     logger=logger,
-            #     name=f"{layer_idx}_Activity",
-            #     figure=LI.plot_states(
-            #         layer_idx, inputs, states, targets, block_idx, output_size,
-            #     ),
-            #     epoch_step=epoch_step,
-            # )
+            save_fig_to_aim(
+                logger=logger,
+                name=f"{layer_idx}_Activity",
+                figure=LI.plot_states(
+                    layer_idx, inputs, states, targets, block_idx, output_size, auto_regression=kwargs['auto_regression']
+                ),
+                epoch_step=epoch_step,
+            )
 
             distributions = [
                 ("tau", self.tau_u_trainer.get_tau().cpu().detach().numpy()),

@@ -4,9 +4,6 @@ import torch
 
 def get_per_layer_spike_probs(states_list: list[torch.Tensor], 
                               block_idx):
-    print(len(states_list))
-    print(states_list[0].shape)
-    print(states_list[1].shape)
     """
     Iterate over the recorded states of each layers,
     if this states correspond on to a spiking neurons states.
@@ -27,8 +24,8 @@ def get_spike_prob(z, block_idx):
     determined as the sum of all valid/non-padded time-steps.
     
     """
-    print(z.shape)
-    z = z[:, 1:] 
+    z = z[:, 1:]
+    
     # create a tensor that have the same shape as z except for the temporal dimension
     # the temporal dimension correspond to result of the scatter operation
     # for the padded timesteps (spike_proba_per_block[:, 0]) and non-padded timesteps
@@ -37,6 +34,8 @@ def get_spike_prob(z, block_idx):
     spike_proba_per_block = torch.zeros(
         size=(z.shape[0], 2, z.shape[2]), device=z.device
     )
+    print(z.shape)
+    print(block_idx.shape)
     # determined all non-padded time-steps
     # assuming that padded time-steps are always summed to block_idx[:, 0]
     padded_timesteps_mask = (block_idx != torch.tensor(0)).long()
