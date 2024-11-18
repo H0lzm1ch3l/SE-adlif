@@ -71,7 +71,7 @@ class LIF(Module):
             -self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
             self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
         )
-        torch.nn.init.ones_(self.bias)
+        torch.nn.init.zeros_(self.bias)
         if self.use_recurrent:
             torch.nn.init.orthogonal_(
                 self.recurrent,

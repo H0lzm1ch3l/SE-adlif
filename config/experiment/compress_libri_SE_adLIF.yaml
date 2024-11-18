@@ -68,6 +68,7 @@ patience: 15
 # warm start, the lr is fixed at fast_epoch_lr_factor*lr for the first num_fast_epoch
 num_fast_epoch: 10
 fast_epoch_lr_factor: 10
-# weight gain (spread) of ff_weight (only the first layer)
+
+# weight gain (spread) of ff_weight
 ff_gain: 10
 random_seed: 42
