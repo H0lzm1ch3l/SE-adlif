@@ -1,0 +1,13 @@
+# class_path: datasets.pl_dataset.SHDLDM
+# init_args:
+_target_: datasets.audio_compress.CompressLibri
+name: Compress libri task
+required_model_size: small
+data_path: ${datadir}
+max_sample: 5000
+sampling_freq: 3000
+sample_length: 500
+batch_size: 64
+num_workers: 8
+fits_into_ram: True
+num_classes: 1

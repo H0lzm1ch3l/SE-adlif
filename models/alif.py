@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Optional, Sequence, Tuple
 import torch
 from torch.nn import Module
 from torch import Tensor
@@ -28,8 +28,13 @@ class EFAdLIF(Module):
         super().__init__(**kwargs)
         self.in_features = cfg.input_size
         self.out_features = cfg.n_neurons
-        self.dt = 1.0
-        self.thr = cfg.get('thr', 1.0)
+        self.dt =  cfg.get('dt', 1.0)
+        thr = cfg.get('thr', 1.0)
+        if isinstance(thr, Sequence):
+            thr = torch.FloatTensor(self.out_features, device=device).uniform_(thr[0], thr[1])
+        else:
+            thr = torch.Tensor([thr,])
+        self.register_buffer('thr', thr)
         self.alpha = cfg.get('alpha', 5.0)
         self.c = cfg.get('c', 0.4)
         self.tau_u_range = cfg.tau_u_range
@@ -37,7 +42,8 @@ class EFAdLIF(Module):
         self.tau_w_range = cfg.tau_w_range
         self.train_tau_w_method = 'interpolation'        
         self.use_recurrent = cfg.get('use_recurrent', True)
-
+        
+        self.ff_gain = cfg.get('ff_gain', 1.0)
         self.a_range = [0.0, 1.0]
         self.b_range = [0.0, 2.0]
         
@@ -68,7 +74,8 @@ class EFAdLIF(Module):
                 torch.empty((self.out_features, self.out_features), **factory_kwargs)
             )
         else:
-            self.register_buffer("recurrent", None)
+            # registering an empty size tensor is required for the static analyser when using jit.script
+            self.register_buffer("recurrent", torch.empty(size=()))
 
         self.a = Parameter(torch.empty(self.out_features, **factory_kwargs))
         self.b = Parameter(torch.empty(self.out_features, **factory_kwargs))
@@ -83,8 +90,8 @@ class EFAdLIF(Module):
         
         torch.nn.init.uniform_(
             self.weight,
-            -1.0 * torch.sqrt(1 / torch.tensor(self.in_features)),
-            torch.sqrt(1 / torch.tensor(self.in_features)),
+            -self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
+            self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
         )
         
         torch.nn.init.zeros_(self.bias)
@@ -97,35 +104,66 @@ class EFAdLIF(Module):
         torch.nn.init.uniform_(self.a, self.a_range[0], self.a_range[1])
         torch.nn.init.uniform_(self.b, self.b_range[0], self.b_range[1])
         
-    def initial_state(self, batch_size, device) -> Tensor:
+    def initial_state(self, batch_size:int, device: Optional[torch.device] = None) -> tuple[Tensor, Tensor, Tensor]:
         size = (batch_size, self.out_features)
         u = torch.zeros(
             size=size, 
             device=device, 
             dtype=torch.float, 
-            requires_grad=True
+            layout=None, 
+            pin_memory=None
         )
         z = torch.zeros(
             size=size, 
             device=device, 
             dtype=torch.float, 
-            requires_grad=True
+            layout=None, 
+            pin_memory=None
         )
         w = torch.zeros(
             size=size,
-            device=device,
-            dtype=torch.float,
-            requires_grad=True,
+            device=device, 
+            dtype=torch.float, 
+            layout=None, 
+            pin_memory=None
         )
         return u, z, w
-
+    @torch.jit.ignore
     def apply_parameter_constraints(self):
         self.tau_u_trainer.apply_parameter_constraints()
         self.tau_w_trainer.apply_parameter_constraints()
         self.a.data = torch.clamp(self.a, min=self.a_range[0], max=self.a_range[1])
         self.b.data = torch.clamp(self.b, min=self.b_range[0], max=self.b_range[1])
-
-    def forward(
+        
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        current = F.linear(inputs, self.weight, self.bias)
+        decay_u = self.tau_u_trainer.get_decay()
+        decay_w = self.tau_w_trainer.get_decay()
+        u, z, w = self.initial_state(int(inputs.shape[0]), inputs.device)
+        
+        out_buffer = torch.zeros(inputs.size(0), inputs.size(1), self.out_features, device=inputs.device)
+        for i, cur in enumerate(current.unbind(1)):
+            if self.use_recurrent:
+                cur_rec = F.linear(z, self.recurrent, None)
+                cur = cur + cur_rec
+            
+            u_t = decay_u * u + (1.0 - decay_u) * (
+                cur - w
+            )
+            u_thr = u_t - self.thr
+            # Forward Gradient Injection trick (credits to Sebastian Otte)
+            z_t = torch.heaviside(u_thr, torch.as_tensor(0.0).type(u_thr.dtype)).detach() + (u_thr - u_thr.detach()) * SLAYER(u_thr, self.alpha, self.c).detach()
+            u_t = u_t * (1 - z_t.detach())
+            w = (
+                decay_w * w + (1.0 - decay_w) * (self.a * u + self.b * z) * self.q
+                )
+            z = z_t
+            u = u_t
+            out_buffer[:, i] = z
+        return out_buffer
+    
+    @torch.jit.ignore
+    def forward_cell(
         self, input_tensor: Tensor,  states: Tuple[Tensor, Tensor, Tensor]
     ) -> Tuple[Tensor, Tensor]:
         u_tm1, z_tm1, w_tm1 = states
@@ -148,8 +186,9 @@ class EFAdLIF(Module):
             decay_w * w_tm1
             + (1.0 - decay_w) * (self.a * u_tm1 + self.b * z_tm1) * self.q
         )
-        return z_t.clone(), (u_t, z_t, w_t)
+        return z_t, (u_t, z_t, w_t)
     
+    @torch.jit.ignore
     @staticmethod
     def plot_states(layer_idx, inputs, states):
         figure, axes = plt.subplots(
@@ -173,7 +212,7 @@ class EFAdLIF(Module):
         figure.suptitle(f"Layer {layer_idx}\n Nb spikes: {nb_spikes_str},")
         plt.close(figure)
         return figure
-
+    @torch.jit.ignore
     def layer_stats(self, layer_idx: int, logger, epoch_step: int, spike_probabilities: torch.Tensor,
                     inputs: torch.Tensor, states: torch.Tensor, **kwargs):
         """Generate statistisc from the layer weights and a plot of the layer dynamics for a random task example
@@ -215,7 +254,32 @@ class EFAdLIF(Module):
         )
     
 class SEAdLIF(EFAdLIF):
-    def forward(
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        current = F.linear(inputs, self.weight, self.bias)
+        decay_u = self.tau_u_trainer.get_decay()
+        decay_w = self.tau_w_trainer.get_decay()
+        u, z, w = self.initial_state(int(inputs.shape[0]), inputs.device)
+        
+        out_buffer = torch.zeros(inputs.size(0), inputs.size(1), self.out_features, device=inputs.device)
+        for i, cur in enumerate(current.unbind(1)):
+            if self.use_recurrent:
+                cur_rec = F.linear(z, self.recurrent, None)
+                cur = cur + cur_rec
+            
+            u = decay_u * u + (1.0 - decay_u) * (
+                cur - w
+            )
+            u_thr = u - self.thr
+            # Forward Gradient Injection trick (credits to Sebastian Otte)
+            z = torch.heaviside(u_thr, torch.as_tensor(0.0).type(u_thr.dtype)).detach() + (u_thr - u_thr.detach()) * SLAYER(u_thr, self.alpha, self.c).detach()
+            u = u * (1 - z.detach())
+            w = (
+                decay_w * w + (1.0 - decay_w) * (self.a * u + self.b * z) * self.q
+                )
+            out_buffer[:, i] = z
+        return out_buffer
+    @torch.jit.ignore
+    def forward_cell(
         self, input_tensor: Tensor, states: Tuple[Tensor, Tensor, Tensor]
     ) -> Tuple[Tensor, Tensor]:
         u_tm1, z_tm1, w_tm1 = states
@@ -232,13 +296,10 @@ class SEAdLIF(EFAdLIF):
         u_thr = u_t - self.thr
         # Forward Gradient Injection trick (credits to Sebastian Otte)
         z_t = torch.heaviside(u_thr, torch.as_tensor(0.0).type(u_thr.dtype)).detach() + (u_thr - u_thr.detach()) * SLAYER(u_thr, self.alpha, self.c).detach()
-        
-        # Symplectic formulation with early reset
-
         u_t = u_t * (1 - z_t.detach())
+        
         w_t = (
-            decay_w * w_tm1
-            + (1.0 - decay_w) * (self.a * u_t + self.b * z_t) * self.q
+            decay_w * w_tm1 + (1.0 - decay_w) * (self.a * u_t + self.b * z_t ) * self.q
         )
-        return z_t.clone(), (u_t, z_t, w_t)
+        return z_t, (u_t, z_t, w_t)
     

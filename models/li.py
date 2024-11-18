@@ -28,9 +28,9 @@ class LI(Module):
     ) -> None:
         factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__(**kwargs)
-        self.in_features = cfg.n_neurons
+        self.in_features = cfg.input_size
         self.out_features = cfg.dataset.num_classes
-        self.dt = 1.0
+        self.dt = cfg.get('dt', 1.0)
         self.tau_u_range = cfg.tau_out_range
         self.train_tau_u_method = cfg.get('train_tau_out_method', 'fixed')
         self.weight = Parameter(
@@ -65,20 +65,38 @@ class LI(Module):
 
     def initial_state(
         self, batch_size: int, device: Optional[torch.device] = None
-    ) -> Tensor:
+    ) -> tuple[Tensor,]:
         size = (batch_size, self.out_features)
-        u = torch.zeros(size=size, device=device, dtype=torch.float, requires_grad=True)
+        u = torch.zeros(size=size, 
+            device=device, 
+            dtype=torch.float, 
+            layout=None, 
+            pin_memory=None
+        )
         return (u,)
-
-    def forward(self, input_tensor: Tensor, states: Tensor) -> Tuple[Tensor, Tensor]:
+    def forward(self, inputs):
+        current = F.linear(inputs, self.weight, self.bias)
+        decay_u = self.tau_u_trainer.get_decay()
+        u, = self.initial_state(inputs.shape[0], inputs.device)
+        out_buffer = torch.zeros(inputs.size(0), inputs.size(1), self.out_features, device=inputs.device)
+        for i, cur in enumerate(current.unbind(1)):
+            u = decay_u * u + (1 - decay_u) * cur
+            out_buffer[:, i] = u
+        return out_buffer
+    
+    @torch.jit.ignore
+    def forward_cell(self, input_tensor: Tensor, states: Tensor) -> Tuple[Tensor, Tensor]:
         u_tm1, = states
         decay_u = self.tau_u_trainer.get_decay()
         current = F.linear(input_tensor, self.weight, self.bias)
         u_t = decay_u * u_tm1 + (1.0 - decay_u) * current
-        return u_t.clone(), (u_t,)
-
+        return u_t, (u_t,)
+    
+    @torch.jit.ignore
     def apply_parameter_constraints(self):
         self.tau_u_trainer.apply_parameter_constraints()
+        
+    @torch.jit.ignore
     @staticmethod
     def plot_states(layer_idx, inputs, states, targets, block_idx, output_size, auto_regression):
         figure, axes = plt.subplots(nrows=3, ncols=1, sharex="all", figsize=(8, 11))
@@ -119,6 +137,7 @@ class LI(Module):
         plt.close(figure)
         return figure
     
+    @torch.jit.ignore
     def layer_stats(
             self,
             layer_idx: int,
