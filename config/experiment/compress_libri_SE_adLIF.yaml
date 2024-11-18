@@ -1,0 +1,73 @@
+# @package _global_
+
+defaults:
+  - /dataset: compress_libri
+
+exp_name: compres_libri_SE_adLIF
+
+# Which cell to use
+cell: se_adlif
+
+auto_regression: True
+
+# input size 
+input_size: 1
+# number of neurons
+n_neurons: 300
+# number of neurons in the big layer
+n_neurons_big: 300
+# number of neurons of the small layer
+n_neurons_small: 100
+
+
+# Whether to use a two-layer network
+two_layers: True
+
+# light decoder is a decoder with only a LI layer
+light_decoder: True
+
+# Factor for reparametrization of a and b (see paper)
+q: 120
+
+# Parameters of SLAYER
+alpha: 5.0
+c: 0.4
+thr: 1.0
+dt: 1.0
+# Number of epochs
+n_epochs: 200
+use_recurrent: True
+
+# Range of tau_u
+tau_u_range: [5, 100]
+
+# Range of tau_w
+tau_w_range: [60, 300]
+
+# Dropout rate
+dropout: 0.0
+
+# Time constant of output layer 
+tau_out_range: [1, 20]
+train_tau_out_method: 'interpolation'
+
+
+
+# Loss aggregation
+loss_agg: MSE
+
+# Metric tracking
+tracking_metric: val_loss
+tracking_mode: min
+
+# optimizer parameters
+# learning rate of the optimizer
+lr: 0.01
+factor: 0.5
+patience: 15
+# warm start, the lr is fixed at fast_epoch_lr_factor*lr for the first num_fast_epoch
+num_fast_epoch: 10
+fast_epoch_lr_factor: 10
+# weight gain (spread) of ff_weight (only the first layer)
+ff_gain: 10
+random_seed: 42

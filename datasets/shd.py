@@ -8,13 +8,13 @@ from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 from datasets.utils.pad_tensors import PadTensors
 from datasets.utils.transforms import TakeEventByTime, AddNoiseByproportion, Flatten
+from datasets.utils.diskcache import DiskCachedDataset
 import tonic
 from tonic.datasets.hsd import SHD
 from torch.utils import data
 from tonic.transforms import ToFrame
 import hydra
 import os
-
 """ The following class is a wrapper for the SHD dataset with a block_idx (see Readme.md) """
 
 
@@ -68,6 +68,7 @@ class SHDLDM(pl.LightningDataModule):
             data_path = os.path.abspath(os.path.join(cwd, data_path))
             
         self.data_path = data_path
+        self.cache_path = data_path + "/cache/SHD"
         self.spatial_factor = spatial_factor
         self.time_factor = time_factor
         self.window_size = window_size
@@ -223,7 +224,7 @@ class SHDLDM(pl.LightningDataModule):
 
     def train_dataloader(self):
         return DataLoader(
-            self.data_train,
+            DiskCachedDataset(self.data_train, self.cache_path + "/train"),
             shuffle=True,
             pin_memory=True,
             batch_size=self.batch_size,
@@ -235,7 +236,7 @@ class SHDLDM(pl.LightningDataModule):
 
     def val_dataloader(self):
         val_dataloader = DataLoader(
-            self.data_val,
+            DiskCachedDataset(self.data_val, self.cache_path + "/val"),
             shuffle=False,
             pin_memory=True,
             batch_size=self.batch_size,
@@ -249,7 +250,7 @@ class SHDLDM(pl.LightningDataModule):
             return [
                 val_dataloader,
                 DataLoader(
-                    self.data_test,
+                    DiskCachedDataset(self.data_test, self.cache_path + "/test",),
                     shuffle=False,
                     pin_memory=True,
                     batch_size=self.batch_size,
@@ -264,7 +265,7 @@ class SHDLDM(pl.LightningDataModule):
 
     def test_dataloader(self):
         return DataLoader(
-            self.data_test,
+            DiskCachedDataset(self.data_test, self.cache_path + "/test"),
             pin_memory=True,
             shuffle=False,
             batch_size=self.batch_size,
@@ -276,7 +277,7 @@ class SHDLDM(pl.LightningDataModule):
 
     def predict_dataloader(self):
         return DataLoader(
-            self.data_test,
+            DiskCachedDataset(self.data_test, self.cache_path + "/test"),
             shuffle=False,
             batch_size=self.batch_size,
             pin_memory=True,

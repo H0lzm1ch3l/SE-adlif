@@ -33,12 +33,13 @@ class MLPSNN(pl.LightningModule):
         self.output_size = cfg.dataset.num_classes
         self.tracking_metric = cfg.tracking_metric
         self.tracking_mode = cfg.tracking_mode
-        self.lr = cfg.lr 
+        self.lr = cfg.lr
+        
 
         # For learning rate scheduling (used for oscillation task)
         self.factor = cfg.factor
         self.patience = cfg.patience
-
+        
         self.auto_regression =  cfg.get('auto_regression', False)
         self.output_size = cfg.dataset.num_classes
         self.batch_size = cfg.dataset.batch_size
@@ -74,7 +75,6 @@ class MLPSNN(pl.LightningModule):
         
         # Iterate over each time step in the data
         for t, x_t in enumerate(inputs.unbind(1)):
-            # Auto-regression for oscillator task
             if self.auto_regression and t >= single_step_prediction_limit:
                 x_t = out.detach()
             out, s1 = self.l1(x_t, s1)
@@ -96,6 +96,7 @@ class MLPSNN(pl.LightningModule):
         self.states.append(s1_list)
         if self.two_layers:
             s2_list = torch.stack([torch.stack(x, dim=-2) for x in zip(*s2_list)], dim=0)
+            self.states.append(s2_list)
         s_out_list = torch.stack([torch.stack(x, dim=-2) for x in zip(*s_out_list)], dim=0)
         
         self.states.append(s_out_list)
@@ -127,7 +128,8 @@ class MLPSNN(pl.LightningModule):
         # the number of class
         if self.auto_regression:
             targets = targets[:, 1:]
-            l2_loss = (outputs - targets) ** 2
+            # TODO: reput square loss
+            l2_loss = torch.abs(outputs - targets)
             
             block_outputs = torch.zeros(
                 size=(targets.shape[0], 2, outputs.shape[2]),
@@ -207,13 +209,13 @@ class MLPSNN(pl.LightningModule):
         """
         if self.auto_regression:
             single_step_prediction_limit = int(math.ceil(0.5*outputs.shape[1]))
-            outputs = outputs[:, single_step_prediction_limit:].squeeze()
-            targets = targets[:, single_step_prediction_limit+1:].squeeze()
+            outputs = outputs[:, single_step_prediction_limit:]
+            targets = targets[:, single_step_prediction_limit+1:]
+
             outputs = outputs.reshape(-1, outputs.shape[-1])
             targets = targets.reshape(-1, targets.shape[-1])
         else:
             targets = targets.flatten()
-
         metrics(outputs, targets)
         self.log_dict(
             metrics,
@@ -247,7 +249,6 @@ class MLPSNN(pl.LightningModule):
             self.train_metric,
             prefix="train_",
         )
-
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -350,18 +351,18 @@ class MLPSNN(pl.LightningModule):
         self.log_dict(grad_norm(self, norm_type=2))
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(params=self.parameters(), lr=self.lr)
-
-        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer=optimizer,
+        opt = torch.optim.Adam(params=self.parameters(), lr=self.lr)
+        lr_2 = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer=opt,
             mode=self.tracking_mode,
             factor=self.factor,
             patience=self.patience,
         )
-        return {
-            "optimizer": optimizer,
+        return (
+            {
+            "optimizer": opt,
             "lr_scheduler": {
-                "scheduler": lr_scheduler,
+                "scheduler": lr_2,
                 "monitor": self.tracking_metric,
             },
-        }
+            })

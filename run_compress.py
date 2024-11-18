@@ -3,7 +3,7 @@ import hydra
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import logging
-from models.pl_module import MLPSNN
+from models.pl_module_compress import MLPSNN
 
 from pytorch_lightning.strategies import SingleDeviceStrategy
 import os

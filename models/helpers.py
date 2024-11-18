@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 # SLAYER surrogate gradient function
-def SLAYER(x, alpha, c):
+def SLAYER(x: torch.Tensor, alpha: float, c: float) -> torch.Tensor:
     return c * alpha / (2 * torch.exp(x.abs() * alpha))
 
 def get_event_indices(data):

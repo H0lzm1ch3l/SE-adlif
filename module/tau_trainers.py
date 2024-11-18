@@ -36,7 +36,7 @@ class TauTrainer(Module):
         
     def reset_parameters(self) -> None:
         raise NotImplementedError("This function should not be call from the base class.")
-    
+    @torch.jit.ignore
     def apply_parameter_constraints(self) -> None:
         raise NotImplementedError("This function should not be call from the base class.")
     
@@ -62,7 +62,8 @@ class FixedTau(TauTrainer):
     ) -> None:
         super(FixedTau, self).__init__(
             in_features, dt, tau_min, tau_max, device, dtype, **kwargs)
-        
+    
+    @torch.jit.ignore
     def apply_parameter_constraints(self):
         pass
 
@@ -90,6 +91,7 @@ class InterpolationTrainer(TauTrainer):
         **kwargs,
     ) -> None:
         super().__init__(in_features, dt, tau_min, tau_max, device, dtype, **kwargs)
+    @torch.jit.ignore
     def apply_parameter_constraints(self):
         with torch.no_grad():
             self.weight.clamp_(0.0, 1.0)

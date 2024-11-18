@@ -1,5 +1,5 @@
 
-from typing import Optional
+from typing import Optional, Sequence
 from models.helpers import SLAYER, get_event_indices, save_distributions_to_aim, save_fig_to_aim
 import torch
 import torch.nn.functional as F
@@ -29,13 +29,18 @@ class LIF(Module):
         super().__init__(**kwargs)
         self.in_features = cfg.input_size
         self.out_features = cfg.n_neurons
-        self.dt = 1.0
+        self.dt = cfg.get('dt', 1.0)
         self.tau_u_range = cfg.tau_u_range
         self.train_tau_u_method = cfg.get('train_tau_u_method', 'interpolation')
         
         self.use_recurrent = cfg.get('use_recurrent', True)
-        self.thr = cfg.get('thr', 1.0)
-        
+        self.ff_gain = cfg.get('ff_gain', 1.0)
+        thr = cfg.get('thr', 1.0)
+        if isinstance(thr, Sequence):
+            thr = torch.FloatTensor(self.out_features, device=device).uniform_(thr[0], thr[1])
+        else:
+            thr = torch.Tensor([thr,])
+        self.register_buffer('thr', thr)
         self.alpha = cfg.get('alpha', 5.0)
         self.c = cfg.get('c', 0.4)
 
@@ -48,7 +53,8 @@ class LIF(Module):
                     torch.empty((self.out_features, self.out_features), **factory_kwargs)
                 )
         else:
-            self.register_buffer("recurrent", None)
+            # registering an empty size tensor is required for the static analyser
+            self.register_buffer("recurrent", torch.empty(size=()))
         self.tau_u_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_u_method)(
             self.out_features,
             self.dt,
@@ -62,27 +68,57 @@ class LIF(Module):
         self.tau_u_trainer.reset_parameters()
         torch.nn.init.uniform_(
             self.weight,
-            -1.0 * torch.sqrt(1 / torch.tensor(self.in_features)),
-            torch.sqrt(1 / torch.tensor(self.in_features)),
+            -self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
+            self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
         )
-        torch.nn.init.zeros_(self.bias)
+        torch.nn.init.ones_(self.bias)
         if self.use_recurrent:
             torch.nn.init.orthogonal_(
                 self.recurrent,
                 gain=1.0,
             )
+                        
 
     def initial_state(
         self, batch_size: int, device: Optional[torch.device] = None
-    ) -> Tensor:
+    ) -> tuple[Tensor, Tensor]:
         size = (batch_size, self.out_features)
         u = torch.zeros(
-            size=size, device=device, dtype=torch.float, requires_grad=True
+            size=size, 
+            device=device, 
+            dtype=torch.float, 
+            layout=None, 
+            pin_memory=None
         )
-        z = torch.zeros(size=size, device=device, dtype=torch.float, requires_grad=True)
+        z = torch.zeros(size=size, 
+                        device=device, 
+                        dtype=torch.float,
+                        layout=None, 
+                        pin_memory=None
+                        )
         return u, z
-
-    def forward(self, input_tensor: Tensor, states: tuple[Tensor, Tensor]) -> tuple[Tensor, Tensor]:
+    
+    def forward(self, inputs: torch.Tensor) -> Tensor:
+        currents = F.linear(inputs, self.weight, self.bias)
+        decay_u = self.tau_u_trainer.get_decay()
+        u, z = self.initial_state(inputs.shape[0], inputs.device)
+        out_buffer = torch.zeros(inputs.size(0), inputs.size(1), self.out_features, device=inputs.device)
+        for i, cur in enumerate(currents.unbind(1)):
+            
+            if self.use_recurrent:
+                rec_current = F.linear(z, self.recurrent, None)
+                cur = cur + rec_current
+            u = u * (1 - z.detach())
+            u = decay_u * u + (1.0 - decay_u) * (cur)
+            u_thr = u - self.thr
+            # Forward Gradient Injection trick (credits to Sebastian Otte)
+            z = torch.heaviside(u_thr, torch.as_tensor(0.0).type(u_thr.dtype)).detach() + (u_thr - u_thr.detach()) * SLAYER(u_thr, self.alpha, self.c).detach()
+            
+            out_buffer[:, i] = z
+        return out_buffer
+    
+    @torch.jit.ignore
+    def forward_cell(self, input_tensor: Tensor, states: tuple[Tensor, Tensor]) -> tuple[Tensor, Tensor]:
         u_tm1, z_tm1 = states
         decay_u = self.tau_u_trainer.get_decay()
         soma_current = F.linear(input_tensor, self.weight, self.bias)
@@ -96,11 +132,12 @@ class LIF(Module):
         z_t = torch.heaviside(u_thr, torch.as_tensor(0.0).type(u_thr.dtype)).detach() + (u_thr - u_thr.detach()) * SLAYER(u_thr, self.alpha, self.c).detach()
         u_t = u_t * (1 - z_t.detach())
         return z_t, (u_t, z_t)
-
-
+    
+    @torch.jit.ignore
     def apply_parameter_constraints(self):
         self.tau_u_trainer.apply_parameter_constraints()
-    
+        
+    @torch.jit.ignore
     @staticmethod
     def plot_states(layer_idx, inputs, states):
         figure, axes = plt.subplots(nrows=3, ncols=1, sharex="all", figsize=(8, 11))
