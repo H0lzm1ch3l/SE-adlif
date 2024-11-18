@@ -245,18 +245,9 @@ class CompressLibri(pl.LightningDataModule):
             transform=None,
             target_transform=None,
         )
-        self.valid_dataset_ = LibriTTS(
-            save_to=data_path+"/LibriTTS",
-            max_sample=max_sample,
-            sampling_freq=sampling_freq,
-            sample_length=sample_length,
-            debug=True,
-            transform=None,
-            target_transform=None,
-        )
-        self.valid_dataset_, self.test_dataset_ = torch.utils.data.random_split(
-            self.valid_dataset_,
-            [0.1, 0.9],
+        self.train_dataset_, self.valid_dataset_, self.test_dataset_ = torch.utils.data.random_split(
+            self.train_dataset_,
+            [0.8, 0.1, 0.1],
             generator=None,
         )
     def prepare_data(self):
