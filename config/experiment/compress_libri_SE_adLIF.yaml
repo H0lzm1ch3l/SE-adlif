@@ -12,22 +12,36 @@ auto_regression: True
 
 # input size 
 input_size: 1
-# number of neurons
+# number of neurons (placeholder for not braking config reading by the SNN module)
+
 n_neurons: 300
 # number of neurons in the big layer
 n_neurons_big: 300
 # number of neurons of the small layer
 n_neurons_small: 100
 
+### first layer specific parameters
 
-# Whether to use a two-layer network
-two_layers: True
+# not using recurrent connection seems to prevent the neurons to self-amplified
+# even when their is no input
+first_layer_use_recurrent: False
+# lower threshold  (0.1) at the first layer seems to allow fast convergence
+first_layer_thr: 1.0
+# weight gain (spread) of ff_weight
+ff_gain: 10
+use_recurrent: True
 
 # light decoder is a decoder with only a LI layer
 light_decoder: False
 
 # Factor for reparametrization of a and b (see paper)
 q: 120
+
+# Range of tau_u
+tau_u_range: [5, 25]
+
+# Range of tau_w
+tau_w_range: [60, 300]
 
 # Parameters of SLAYER
 alpha: 5.0
@@ -36,13 +50,7 @@ thr: 1.0
 dt: 1.0
 # Number of epochs
 n_epochs: 200
-use_recurrent: True
 
-# Range of tau_u
-tau_u_range: [5, 25]
-
-# Range of tau_w
-tau_w_range: [60, 300]
 
 # Dropout rate
 dropout: 0.0
@@ -66,23 +74,23 @@ lr: 0.01
 factor: 0.5
 patience: 15
 
+grad_norm: 10
+
 # warm start, the lr is fixed at fast_epoch_lr_factor*lr for the first num_fast_epoch
 num_fast_epoch: 0
 fast_epoch_lr_factor: 10
 
-# weight gain (spread) of ff_weight
-ff_gain: 10
 
-# loss parameters
-n_mels: 64 # number of bins in the mel-scale spectrogram
+# Spectral loss parameters (cf. https://arxiv.org/abs/2008.01160)
+n_mels: 64 # number of bins in the mel-scale spectrogram (this is the features dimension of the spectrogram)
 min_window: 6 # min size of the FFT windows in power of two 
 max_window: 9 # max size of the FTT windows in power of two
 
 # regularization parameters
-min_spike_prob: 0.1
-max_spike_prob: 0.2
-min_layer_coeff: [100.0, 1.0, 1.0, 1.0] # encourage the first layer to spike
-max_layer_coeff: [1.0, 1.0, 1.0, 1.0] # here we may encourage lower spike for the second layer to encourage compression
+min_spike_prob: [0.1, 0.05, 0.05, 0.05]
+max_spike_prob: [0.2, 0.1, 0.1, 0.1]
+min_layer_coeff: [1000.0, 1.0, 1.0, 1.0] # encourage the first layer to spike
+max_layer_coeff: [10.0, 10.0, 10.0, 10.0] # here we may encourage lower spike for the second layer to encourage compression
 
 
 random_seed: 42

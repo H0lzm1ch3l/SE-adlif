@@ -7,6 +7,9 @@ data_path: ${datadir}
 max_sample: 5000
 sampling_freq: 16000
 sample_length: 512
+# allow to do y[t - delay] L(x[0:t]) instead to of y[t] = L(x[0:t]) 
+# where L is the SNN model, it prevents that the neuron should respond directly
+# to be fair with a spectral loss it may not really matter if the neuron respond with a temporal shift
 prediction_delay: 3
 batch_size: 128
 num_workers: 8
