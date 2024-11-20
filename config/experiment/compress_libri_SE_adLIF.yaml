@@ -24,7 +24,7 @@ n_neurons_small: 100
 two_layers: True
 
 # light decoder is a decoder with only a LI layer
-light_decoder: True
+light_decoder: False
 
 # Factor for reparametrization of a and b (see paper)
 q: 120
@@ -39,7 +39,7 @@ n_epochs: 200
 use_recurrent: True
 
 # Range of tau_u
-tau_u_range: [5, 100]
+tau_u_range: [5, 25]
 
 # Range of tau_w
 tau_w_range: [60, 300]
@@ -65,10 +65,24 @@ tracking_mode: min
 lr: 0.01
 factor: 0.5
 patience: 15
+
 # warm start, the lr is fixed at fast_epoch_lr_factor*lr for the first num_fast_epoch
-num_fast_epoch: 10
+num_fast_epoch: 0
 fast_epoch_lr_factor: 10
 
 # weight gain (spread) of ff_weight
 ff_gain: 10
+
+# loss parameters
+n_mels: 64 # number of bins in the mel-scale spectrogram
+min_window: 6 # min size of the FFT windows in power of two 
+max_window: 9 # max size of the FTT windows in power of two
+
+# regularization parameters
+min_spike_prob: 0.1
+max_spike_prob: 0.2
+min_layer_coeff: [100.0, 1.0, 1.0, 1.0] # encourage the first layer to spike
+max_layer_coeff: [1.0, 1.0, 1.0, 1.0] # here we may encourage lower spike for the second layer to encourage compression
+
+
 random_seed: 42

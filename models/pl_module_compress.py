@@ -6,7 +6,7 @@ from torch.nn import CrossEntropyLoss, MSELoss
 from omegaconf import DictConfig
 from pytorch_lightning.utilities import grad_norm
 
-from functional.loss import get_per_layer_spike_probs
+from functional.loss import MultiScaleMelSpetroLoss, get_per_layer_spike_probs, snn_regularization
 from models.alif import EFAdLIF, SEAdLIF
 from models.li import LI
 from models.lif import LIF
@@ -27,14 +27,15 @@ class Encoder(torch.nn.Module):
         cfg.n_neurons = cfg.n_neurons_big
         cfg.thr = 0.1
         self.l1 = SEAdLIF(cfg)
-        cfg.ff_gain = 10.0
         cfg.thr = 1.0
         cfg.input_size = cfg.n_neurons
         cfg.n_neurons = cfg.n_neurons_small
+
         cfg.use_recurrent = True
         self.l2 = self.cell(cfg)
         self.dropout = cfg.dropout
-    
+        self.l1_spike_prob = torch.empty(size=())
+        self.l2_spike_prob = torch.empty(size=())
     @torch.jit.ignore
     def apply_parameter_constraints(self):
         self.l1.apply_parameter_constraints()
@@ -42,7 +43,10 @@ class Encoder(torch.nn.Module):
         
     def forward(self, inputs):
         out = self.l1(inputs)
+        self.l1_spike_prob = out.mean(0).mean(0)
         out = self.l2(out)
+        self.l2_spike_prob = out.mean(0).mean(0)
+
         return out
     @torch.jit.ignore
     def forward_with_states(self, inputs):
@@ -79,18 +83,23 @@ class Decoder(torch.nn.Module):
         else:
             cfg.input_size = cfg.n_neurons
             cfg.n_neurons = cfg.n_neurons_small
-            
+            cfg.use_recurrent = True
+
             self.l1 = self.cell(cfg)
             cfg.input_size = cfg.n_neurons
             cfg.n_neurons = cfg.n_neurons_big
+            cfg.use_recurrent = True
             self.l2 = self.cell(cfg)
             
             cfg.input_size = cfg.n_neurons
             cfg.n_neurons = 1
             self.forward = self.forward_full
             self.forward_with_states = self.forward_full_with_states
-
+        self.l1_spike_prob = torch.empty(size=())
+        self.l2_spike_prob = torch.empty(size=())
+        self.aux_out = torch.empty(size=())
         self.out_layer = LI(cfg)
+        cfg.input_size = cfg.n_neurons_small
         self.dropout = cfg.dropout
     @torch.jit.ignore
     def apply_parameter_constraints(self):
@@ -104,7 +113,9 @@ class Decoder(torch.nn.Module):
         
     def forward_full(self, inputs):
         out = self.l1(inputs)
+        self.l1_spike_prob = out.mean(0).mean(0)
         out = self.l2(out)
+        self.l2_spike_prob = out.mean(0).mean(0)
         out = self.out_layer(out)
         return out
     
@@ -188,6 +199,7 @@ class MLPSNN(pl.LightningModule):
         self.tracking_metric = cfg.tracking_metric
         self.tracking_mode = cfg.tracking_mode
         self.lr = cfg.lr
+        self.prediction_delay = cfg.dataset.prediction_delay
         
 
         # For learning rate scheduling (used for oscillation task)
@@ -205,15 +217,25 @@ class MLPSNN(pl.LightningModule):
         self.init_metrics_and_loss()
         self.save_hyperparameters()
         self.automatic_optimization=False
+        self.loss = MultiScaleMelSpetroLoss(cfg.dataset.sampling_freq, cfg.n_mels, cfg.min_window, cfg.max_window)
         # self.forward = torch.compile(self.pre_forward, fullgraph=True)
-        
+        # regularization parameters
+        self.min_spike_prob = cfg.min_spike_prob
+        self.max_spike_prob = cfg.max_spike_prob
+        self.min_layer_coeff = cfg.min_layer_coeff
+        self.max_layer_coeff = cfg.max_layer_coeff
+        self.light_decoder = cfg.light_decoder
+        if self.light_decoder:
+            self.min_layer_coeff = self.min_layer_coeff[:2]
+            self.max_layer_coeff = self.max_layer_coeff[:2] 
+                
     def forward(self, inputs: torch.Tensor):
         out = self.model(inputs)
         return out
     # 
     def forward_with_states(self, inputs: torch.Tensor) -> tuple[torch.Tensor, list[torch.Tensor]]:
         out, states = self.model.forward_with_states(inputs)
-        self.states = states
+        self.states = [s[:, :, self.prediction_delay:] for s in states]
         return out
 
     def on_train_batch_end(self, outputs, batch, batch_idx: int):
@@ -239,10 +261,10 @@ class MLPSNN(pl.LightningModule):
         # compute softmax for every time-steps with respect to
         # the number of class
         targets = targets[:, 1:]
-        loss = 100*(torch.abs(outputs - targets)).mean()
-        block_idx = block_idx.unsqueeze(-1)
+        loss = self.loss(outputs[:, self.prediction_delay:], targets)
+        block_idx = block_idx[:, self.prediction_delay:].unsqueeze(-1)
         outputs_reduce = outputs
-       
+
         return (outputs_reduce, loss, block_idx)
 
     def update_and_log_metrics(
@@ -271,7 +293,7 @@ class MLPSNN(pl.LightningModule):
 
         """
         targets = targets[:, 1:]
-
+        outputs = outputs[:, self.prediction_delay:]
         outputs = outputs.reshape(-1, outputs.shape[-1])
         targets = targets.reshape(-1, targets.shape[-1])
        
@@ -301,6 +323,7 @@ class MLPSNN(pl.LightningModule):
         outputs = self(
             inputs,
         )
+
         (
             outputs_reduce,
             loss,
@@ -315,9 +338,20 @@ class MLPSNN(pl.LightningModule):
             prefix="train_",
         )
         opt.zero_grad()
+            
+        sum_spikes = [self.model.encoder.l1_spike_prob, self.model.encoder.l2_spike_prob]
+        if not self.light_decoder:
+            sum_spikes.extend([self.model.decoder.l1_spike_prob, self.model.decoder.l2_spike_prob])
+        reg_upper, log_upper = snn_regularization(sum_spikes, 0.2, torch.tensor([1.0, 1.0, 1.0, 1.0], device=inputs.device), 'upper', reduce_layer='sum')
+        reg_lower, log_lower = snn_regularization(sum_spikes, 0.1, torch.tensor([1000.0, 1.0, 10.0, 1.0], device=inputs.device), 'lower', reduce_layer='sum')
+        log_upper.update(log_lower)
+        reg_loss = reg_upper + reg_lower
+        
+        self.log_dict(log_upper, prog_bar=True, on_epoch=True)
+        loss = loss + reg_loss
         self.manual_backward(loss)
         self.log_dict(grad_norm(self, norm_type=2), on_epoch=True)
-        self.clip_gradients(opt, gradient_clip_val=15, gradient_clip_algorithm="norm")
+        self.clip_gradients(opt, gradient_clip_val=10, gradient_clip_algorithm="norm")
         opt.step()
         if self.trainer.is_last_batch and self.trainer.current_epoch  > self.num_fast_epoch:
             sch = self.lr_schedulers()
@@ -351,7 +385,7 @@ class MLPSNN(pl.LightningModule):
             rnd_batch_idx = torch.randint(0, inputs.shape[0], size=()).item()
             prev_layer_input = inputs[rnd_batch_idx]
             layers = [self.model.encoder.l1,self.model.encoder.l2,]
-            if not self.model.decoder.light_decoder:
+            if not self.light_decoder:
                 layers.extend([self.model.decoder.l1, self.model.decoder.l2, self.model.decoder.out_layer])
             else:
                 layers.append(self.model.decoder.out_layer)
