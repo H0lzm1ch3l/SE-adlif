@@ -1,7 +1,51 @@
+import math
+from typing import Optional
 import torch
-
-
-
+from torchaudio.transforms import MelSpectrogram
+reduce_map = {
+    'mean': lambda x: torch.mean(x),
+    'sum': lambda x: torch.sum(x),
+    'none': lambda x: x,
+}
+class MultiScaleMelSpetroLoss(torch.nn.Module):
+    def __init__(self, sampling_rate, n_mels, min_windows_power, max_windows_power, reduce='mean'):
+        super().__init__()
+        self.windows_size = [2**i for i in range(min_windows_power, max_windows_power+1)]
+        print(self.windows_size)
+        self.register_buffer("log_scale", torch.tensor([math.sqrt(s/2) for s in self.windows_size]))
+        
+        self.mel_banks = torch.nn.ModuleList([MelSpectrogram(sampling_rate, max(s, 2*n_mels), s, s//4, n_mels=n_mels, f_min=sampling_rate/s, f_max=sampling_rate/2) for s in self.windows_size])
+        self.eps: float = 1e-9
+        self.reduce = reduce
+        self.reduce_fn = reduce_map[self.reduce]
+        
+    def forward(self, inputs: torch.Tensor, targets: torch.Tensor):
+        x = [mb(inputs.squeeze()) for mb in self.mel_banks]
+        y = [mb(targets.squeeze()) for mb in self.mel_banks]
+        log_x = [torch.log(elem+self.eps) for elem in x]
+        log_y = [torch.log(elem+self.eps) for elem in y]
+        # I have no idea that is the correct implentation none of the paper code follows their equation 
+        # implementation 1: direct translation of https://github.com/google-research/google-research/blob/master/ged_tts/distance_function/spectral_ops.py
+        # average over 1/(n_mels*n_time) for linear and 1/n_mels *1/(n_times)**0.5 for log_delta 
+        # (it make somewhat sense to do the square root of the mean than the mean of the square root)
+        linear = torch.stack([torch.abs(elem_x - elem_y).mean(-1).mean(-1) for elem_x, elem_y in zip(x,y)], dim=-1).sum(dim=-1)
+        log_delta = torch.stack([
+            scale*torch.sqrt(
+                torch.square(elem_x - elem_y).mean(-1) + self.eps
+                ).mean(-1) for scale, elem_x, elem_y in zip(self.log_scale,log_x, log_y)
+            ], dim=-1).sum(dim=-1)
+        # implementation 2: from https://github.com/lucidrains/audiolm-pytorch/blob/main/audiolm_pytorch/soundstream.py a popular audio ml project
+        # here the sum is done over the n_mels and mean over times
+        
+        # linear = torch.stack([torch.abs(elem_x - elem_y).sum(-2).mean(-1) for elem_x, elem_y in zip(x,y)], dim=-1).sum(dim=-1)
+        # log_delta = torch.stack([
+        #             scale*torch.sqrt(
+        #                 torch.square(elem_x - elem_y).sum(-2) + self.eps
+        #                 ).mean(-1) for scale, elem_x, elem_y in zip(self.log_scale,log_x, log_y)
+        #             ], dim=-1).sum(dim=-1)
+        loss = linear + log_delta
+        return self.reduce_fn(loss)
+        
 def get_per_layer_spike_probs(states_list: list[torch.Tensor], 
                               block_idx):
     """
@@ -51,7 +95,11 @@ def get_spike_prob(z, block_idx):
     return spike_proba_per_block[:, 1].mean(dim=0) 
 
 
-def snn_regularization(spike_proba_per_layer: list[torch.Tensor], target: float, reg_type: str):
+def snn_regularization(spike_proba_per_layer: list[torch.Tensor], target: float, 
+                       layer_weights: torch.Tensor,
+                       reg_type: str, 
+                       reduce_neuron: str = "mean",
+                       reduce_layer: str = "mean",):
     """
     Determined the regularization loss 
 
@@ -73,16 +121,26 @@ def snn_regularization(spike_proba_per_layer: list[torch.Tensor], target: float,
         torch.Tensor: the regularization loss averaged over the total numbers of neurons 
     """
     if reg_type == "lower":
-        return torch.mean(torch.concatenate([torch.relu(target - s) ** 2 for s in spike_proba_per_layer]))
-    if reg_type == "upper":
-        return torch.mean(torch.concatenate([torch.relu(s - target) ** 2 for s in spike_proba_per_layer]))
-    if reg_type == "both":
-        return torch.mean(torch.concatenate([(s - target) ** 2 for s in spike_proba_per_layer]))
+        reg = [(torch.relu(target - s) ** 2) for s in spike_proba_per_layer]
+    elif reg_type == "upper":
+        reg = [(torch.relu(s - target) ** 2) for s in spike_proba_per_layer]
+    elif reg_type == "both":
+        reg = [((s - target) ** 2) for s in spike_proba_per_layer]
     else:
         raise NotImplementedError(
             f"Regularization type: {reg_type} is not implemented, valid type are [upper, lower, both]"
         )
-
+    if reduce_neuron == 'mean':
+        reg = torch.stack([r.mean() for r in reg])
+    elif reduce_neuron == 'sum':
+        reg = torch.stack([r.sum() for r in reg])
+    res = (layer_weights * reg)
+    log_dict = {f"{reg_type}_layer_{k}": res[k] for k in range(len(res))}
+    if reduce_layer == 'mean':
+        return res.mean(), log_dict
+    elif reduce_layer == 'sum':
+        return res.sum(), log_dict
+    
 def calculate_weight_decay_loss(model):
     weight_decay_loss = 0
     for name, param in model.named_parameters():

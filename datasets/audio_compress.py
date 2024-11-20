@@ -130,6 +130,7 @@ class LibriTTS(Dataset):
         max_sample: int = -1,
         sampling_freq: int = 24_000,
         sample_length: int = -1,
+        prediction_delay: int = 0,
         train: bool = True,
         debug: bool = True,
         transform = None,
@@ -151,6 +152,7 @@ class LibriTTS(Dataset):
         self.transform = transform
         self.target_transform = target_transform
         self.get_metadata = get_metadata
+        self.prediction_delay = prediction_delay
         root_dir = Path(save_to)
         split = "debug"
         if not debug:
@@ -186,11 +188,17 @@ class LibriTTS(Dataset):
     def __len__(self):
         return self.num_samples if self.max_sample == -1 else min(self.num_samples, self.max_sample)
     def __getitem__(self, index):
-        #TODO: one should probably learn a general offseet
         inputs: torch.Tensor = get_chunk_by_id(index, self.chunk_map, self.sample_length).T
         # inputs = (inputs - inputs.min())/(inputs.max() - inputs.min())
-
-        targets = inputs
+        targets = inputs.clone()
+        # add zero padding to account for possible prediciton delay 
+        # idea is that it is potentially complex for the model to predict
+        # y[t] = L(x[0:t]) where L is the model, x inputs, y the output
+        # delay allow predition as y[t - delay] = L([x[0:t]])
+        inputs = torch.concatenate(
+            (inputs, torch.zeros((self.prediction_delay, 1), device=inputs.device, dtype=inputs.dtype))
+            )
+        
         block_idx = torch.ones((inputs.shape[0],), dtype=torch.int64)
         if self.transform is not None:
             inputs = self.transform(inputs)
@@ -220,6 +228,7 @@ class CompressLibri(pl.LightningDataModule):
                  max_sample: int = -1,
                  sampling_freq: int = 24_000,
                  sample_length: int = -1,
+                 prediction_delay: int = 0,
                  batch_size: int = 32,
                  num_workers: int = 1,
                  fits_into_ram: bool = False,
@@ -241,6 +250,7 @@ class CompressLibri(pl.LightningDataModule):
             max_sample=max_sample,
             sampling_freq=sampling_freq,
             sample_length=sample_length,
+            prediction_delay=prediction_delay,
             debug=True,
             transform=None,
             target_transform=None,
