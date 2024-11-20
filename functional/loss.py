@@ -1,5 +1,5 @@
 import math
-from typing import Optional
+from typing import Optional, Union
 import torch
 from torchaudio.transforms import MelSpectrogram
 reduce_map = {
@@ -11,10 +11,11 @@ class MultiScaleMelSpetroLoss(torch.nn.Module):
     def __init__(self, sampling_rate, n_mels, min_windows_power, max_windows_power, reduce='mean'):
         super().__init__()
         self.windows_size = [2**i for i in range(min_windows_power, max_windows_power+1)]
-        print(self.windows_size)
         self.register_buffer("log_scale", torch.tensor([math.sqrt(s/2) for s in self.windows_size]))
-        
-        self.mel_banks = torch.nn.ModuleList([MelSpectrogram(sampling_rate, max(s, 2*n_mels), s, s//4, n_mels=n_mels, f_min=sampling_rate/s, f_max=sampling_rate/2) for s in self.windows_size])
+        # I'm not quite sure what is the correct parameter for n_fft, It's imply to be s (in soundstream ) but it should be higher than n_mels
+        # but it's not clear by how much
+        self.min_n_fft = 8*n_mels
+        self.mel_banks = torch.nn.ModuleList([MelSpectrogram(sampling_rate, max(s, self.min_n_fft), s, s//4, n_mels=n_mels, f_min=sampling_rate/s, f_max=sampling_rate/2, normalized=True) for s in self.windows_size])
         self.eps: float = 1e-9
         self.reduce = reduce
         self.reduce_fn = reduce_map[self.reduce]
@@ -95,7 +96,7 @@ def get_spike_prob(z, block_idx):
     return spike_proba_per_block[:, 1].mean(dim=0) 
 
 
-def snn_regularization(spike_proba_per_layer: list[torch.Tensor], target: float, 
+def snn_regularization(spike_proba_per_layer: list[torch.Tensor], target: Union[float | list[float]], 
                        layer_weights: torch.Tensor,
                        reg_type: str, 
                        reduce_neuron: str = "mean",
@@ -120,12 +121,14 @@ def snn_regularization(spike_proba_per_layer: list[torch.Tensor], target: float,
     Returns:
         torch.Tensor: the regularization loss averaged over the total numbers of neurons 
     """
+    if isinstance(target, float):
+        target = [target,] * len(spike_proba_per_layer)
     if reg_type == "lower":
-        reg = [(torch.relu(target - s) ** 2) for s in spike_proba_per_layer]
+        reg = [(torch.relu(tg - s) ** 2) for tg, s in zip(target, spike_proba_per_layer)]
     elif reg_type == "upper":
-        reg = [(torch.relu(s - target) ** 2) for s in spike_proba_per_layer]
+        reg = [(torch.relu(s - tg) ** 2) for tg, s in zip(target, spike_proba_per_layer)]
     elif reg_type == "both":
-        reg = [((s - target) ** 2) for s in spike_proba_per_layer]
+        reg = [((s - tg) ** 2) for tg, s in zip(target, spike_proba_per_layer)]
     else:
         raise NotImplementedError(
             f"Regularization type: {reg_type} is not implemented, valid type are [upper, lower, both]"

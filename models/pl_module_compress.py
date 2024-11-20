@@ -23,15 +23,18 @@ class Encoder(torch.nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.cell = layer_map[cfg.cell]
-        cfg.use_recurrent = False
+        base_use_rec = cfg.use_recurrent
+        
+        cfg.use_recurrent = cfg.first_layer_use_recurrent
         cfg.n_neurons = cfg.n_neurons_big
-        cfg.thr = 0.1
-        self.l1 = SEAdLIF(cfg)
-        cfg.thr = 1.0
+        base_thr = cfg.thr
+        cfg.thr = cfg.first_layer_thr
+        self.l1 = self.cell(cfg)
+        
+        cfg.thr = base_thr
+        cfg.use_recurrent = base_use_rec
         cfg.input_size = cfg.n_neurons
         cfg.n_neurons = cfg.n_neurons_small
-
-        cfg.use_recurrent = True
         self.l2 = self.cell(cfg)
         self.dropout = cfg.dropout
         self.l1_spike_prob = torch.empty(size=())
@@ -194,7 +197,6 @@ class MLPSNN(pl.LightningModule):
         super().__init__()
         print(cfg)
         self.ignore_target_idx = -1
-        self.two_layers = cfg.two_layers
         self.output_size = cfg.dataset.num_classes
         self.tracking_metric = cfg.tracking_metric
         self.tracking_mode = cfg.tracking_mode
@@ -228,7 +230,7 @@ class MLPSNN(pl.LightningModule):
         if self.light_decoder:
             self.min_layer_coeff = self.min_layer_coeff[:2]
             self.max_layer_coeff = self.max_layer_coeff[:2] 
-                
+        self.grad_norm = cfg.grad_norm
     def forward(self, inputs: torch.Tensor):
         out = self.model(inputs)
         return out
@@ -342,8 +344,8 @@ class MLPSNN(pl.LightningModule):
         sum_spikes = [self.model.encoder.l1_spike_prob, self.model.encoder.l2_spike_prob]
         if not self.light_decoder:
             sum_spikes.extend([self.model.decoder.l1_spike_prob, self.model.decoder.l2_spike_prob])
-        reg_upper, log_upper = snn_regularization(sum_spikes, 0.2, torch.tensor([1.0, 1.0, 1.0, 1.0], device=inputs.device), 'upper', reduce_layer='sum')
-        reg_lower, log_lower = snn_regularization(sum_spikes, 0.1, torch.tensor([1000.0, 1.0, 10.0, 1.0], device=inputs.device), 'lower', reduce_layer='sum')
+        reg_upper, log_upper = snn_regularization(sum_spikes, self.max_spike_prob, torch.tensor(self.max_layer_coeff, device=inputs.device), 'upper', reduce_layer='sum')
+        reg_lower, log_lower = snn_regularization(sum_spikes, self.min_spike_prob, torch.tensor(self.min_layer_coeff, device=inputs.device), 'lower', reduce_layer='sum')
         log_upper.update(log_lower)
         reg_loss = reg_upper + reg_lower
         
@@ -351,7 +353,7 @@ class MLPSNN(pl.LightningModule):
         loss = loss + reg_loss
         self.manual_backward(loss)
         self.log_dict(grad_norm(self, norm_type=2), on_epoch=True)
-        self.clip_gradients(opt, gradient_clip_val=10, gradient_clip_algorithm="norm")
+        self.clip_gradients(opt, gradient_clip_val=self.grad_norm, gradient_clip_algorithm="norm")
         opt.step()
         if self.trainer.is_last_batch and self.trainer.current_epoch  > self.num_fast_epoch:
             sch = self.lr_schedulers()
