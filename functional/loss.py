@@ -69,7 +69,6 @@ def get_spike_prob(z, block_idx):
     determined as the sum of all valid/non-padded time-steps.
     
     """
-    z = z[:, 1:]
     
     # create a tensor that have the same shape as z except for the temporal dimension
     # the temporal dimension correspond to result of the scatter operation

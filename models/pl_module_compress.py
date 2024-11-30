@@ -55,9 +55,9 @@ class Encoder(torch.nn.Module):
     def forward_with_states(self, inputs):
         states = []
         s1 = self.l1.initial_state(inputs.shape[0], inputs.device)
-        s1_list = [s1]
+        s1_list = []
         s2 = self.l2.initial_state(inputs.shape[0], inputs.device)
-        s2_list = [s2,]
+        s2_list = []
         out_sequence = []
         for t, x_t in enumerate(inputs.unbind(1)):
             out, s1 = self.l1.forward_cell(x_t, s1)
@@ -140,9 +140,9 @@ class Decoder(torch.nn.Module):
     def forward_full_with_states(self, inputs):
         states = []
         s1 = self.l1.initial_state(inputs.shape[0], inputs.device)
-        s1_list = [s1]
+        s1_list = []
         s2 = self.l2.initial_state(inputs.shape[0], inputs.device)
-        s2_list = [s2,]
+        s2_list = []
         s_out = self.out_layer.initial_state(inputs.shape[0], inputs.device)
         s_out_list = [s_out,]
         out_sequence = []
@@ -202,7 +202,7 @@ class MLPSNN(pl.LightningModule):
         self.tracking_mode = cfg.tracking_mode
         self.lr = cfg.lr
         self.prediction_delay = cfg.dataset.prediction_delay
-        
+        self.skip_first_n = cfg.skip_first_n
 
         # For learning rate scheduling (used for oscillation task)
         self.factor = cfg.factor
@@ -262,8 +262,8 @@ class MLPSNN(pl.LightningModule):
         """
         # compute softmax for every time-steps with respect to
         # the number of class
-        targets = targets[:, 1:]
-        loss = self.loss(outputs[:, self.prediction_delay:], targets)
+        targets = targets[:, 1+self.skip_first_n:]
+        loss = self.loss(outputs[:, self.skip_first_n+self.prediction_delay:], targets)
         block_idx = block_idx[:, self.prediction_delay:].unsqueeze(-1)
         outputs_reduce = outputs
 
@@ -331,7 +331,6 @@ class MLPSNN(pl.LightningModule):
             loss,
             block_idx,
         ) = self.process_predictions_and_compute_losses(outputs, targets, block_idx)
-
         self.update_and_log_metrics(
             outputs_reduce,
             targets,
@@ -339,7 +338,6 @@ class MLPSNN(pl.LightningModule):
             self.train_metric,
             prefix="train_",
         )
-        opt.zero_grad()
             
         sum_spikes = [self.model.encoder.l1_spike_prob, self.model.encoder.l2_spike_prob]
         if not self.light_decoder:
@@ -350,6 +348,8 @@ class MLPSNN(pl.LightningModule):
         reg_loss = reg_upper + reg_lower
         
         self.log_dict(log_upper, prog_bar=True, on_epoch=True)
+        opt.zero_grad()
+
         loss = loss + reg_loss
         self.manual_backward(loss)
         self.log_dict(grad_norm(self, norm_type=2), on_epoch=True)

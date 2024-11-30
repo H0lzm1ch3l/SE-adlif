@@ -103,7 +103,7 @@ class LI(Module):
         # for i, cur in enumerate(current.unbind(1)):
         #     u = decay_u * u + (1 - decay_u) * cur
         #     out_buffer[:, i] = u
-        # compute the exponential moving average directly without loop using conv1d
+        # compute the exponential moving average  using conv1d
         return ema_parallel(current, decay_u)
     
     @torch.jit.ignore
