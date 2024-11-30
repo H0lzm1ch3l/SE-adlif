@@ -1,23 +1,24 @@
 import io
 import pickle
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, Tuple, Sequence, Union
 
 import numpy as np
 import torch
 
-@dataclass
 class DiskCachedDataset(torch.utils.data.Dataset):
-    dataset: Sequence
-    cache_path: Union[str, Path]
-    num_copies: int = 1
-    transform: Optional[Callable] = None
-    target_transform: Optional[Callable] = None
-    full_transform: Optional[Callable] = None
-    
-    def __post_init__(self):
-        super().__init__()
+    def __init__(self, dataset:Sequence, 
+                 cache_path: Union[str, Path],
+                 num_copies: int = 1,
+                 transform: Optional[Callable] = None,
+                 target_transform: Optional[Callable] = None,
+                 full_transform: Optional[Callable] = None):
+        self.dataset = dataset
+        self.cache_path = cache_path
+        self.num_copies = num_copies
+        self.transform = transform
+        self.target_transform = target_transform
+        self.full_transform = full_transform
         self.cache_path = Path(self.cache_path)
         self.cache_path.mkdir(exist_ok=True, parents=True)
         if self.dataset is None:
@@ -38,16 +39,13 @@ class DiskCachedDataset(torch.utils.data.Dataset):
             data = torch.load(buffer)
         except Exception as exc:
             if not isinstance(exc, FileNotFoundError):
-                print("Excpection (not FileNotFoundError) occured while trying to load from cache: {}".format(exc))
+                print("File was found but exception occured while trying to load from cache: {}".format(exc))
             data = self.dataset[item]
             try:
                 torch.save(data, self.cache_path / key, pickle_protocol=pickle.HIGHEST_PROTOCOL)
             except Exception as exc:
-                print("Excpection occured while trying to save to cache: {}".format(exc))
+                print("Exception occured while trying to save to cache: {}".format(exc))
         return data
-    
-    context_transform: Optional[Callable] = None
-
     def __getitem__(self, item) -> Union[Tuple[object, object, object],
                                          Tuple[object, object]]:
         copy = np.random.randint(self.num_copies)
