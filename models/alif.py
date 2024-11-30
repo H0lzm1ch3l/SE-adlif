@@ -79,7 +79,8 @@ class EFAdLIF(Module):
 
         self.a = Parameter(torch.empty(self.out_features, **factory_kwargs))
         self.b = Parameter(torch.empty(self.out_features, **factory_kwargs))
-
+        self.u0 = Parameter(torch.empty(self.out_features, **factory_kwargs))
+        self.w0 = Parameter(torch.empty(self.out_features, **factory_kwargs))
 
         self.reset_parameters()
     
@@ -95,6 +96,10 @@ class EFAdLIF(Module):
         )
         
         torch.nn.init.zeros_(self.bias)
+        
+        # h0 states 
+        torch.nn.init.zeros_(self.u0)
+        torch.nn.init.zeros_(self.w0)
         if self.use_recurrent:
             torch.nn.init.orthogonal_(
                 self.recurrent,
