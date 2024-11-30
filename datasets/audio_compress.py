@@ -1,4 +1,4 @@
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import math
 from typing import Callable, Optional
 import hydra
@@ -19,7 +19,7 @@ from pathlib import Path
 import shutil
 import torchaudio
 import pickle
-
+from tqdm import tqdm
 def save_chunk_map(chunk_map, filepath):
     """Saves the chunk map to a pickle file."""
     with open(filepath, 'wb') as f:
@@ -258,7 +258,24 @@ class CompressLibri(pl.LightningDataModule):
         )
         self.train_dataset_ = DiskCachedDataset(
             self.train_dataset_,
-            cache_path=data_path+"/cache/LibriTTS")
+            cache_path=data_path+f"/cache/LibriTTS_hz-{sampling_freq}_sl-{sample_length}")
+        # create cache directly
+        # Use ThreadPoolExecutor with tqdm progress bar
+        def process_item(index, obj):
+            obj[index]
+        print('Generating cache...')
+        with ThreadPoolExecutor() as executor:
+            # Create a tqdm iterator to track progress
+            futures = [
+                executor.submit(process_item, i, self.train_dataset_) 
+                for i in tqdm(range(len(self.train_dataset_)), desc="Sending tasks")
+            ]
+            with tqdm(total=len(futures), desc="Completed tasks", ncols=100) as pbar:
+                for future in as_completed(futures):  # as_completed yields futures as they finish
+                    # Wait for each future to complete and update the progress bar
+                    future.result()  # Optionally, this will raise exceptions if any task fails
+                    pbar.update(1)  # Update progress bar as each task completes
+
         self.train_dataset_, self.valid_dataset_, self.test_dataset_ = torch.utils.data.random_split(
             self.train_dataset_,
             [0.8, 0.1, 0.1],
