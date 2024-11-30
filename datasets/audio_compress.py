@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 
 import pytorch_lightning as pl
 
+from datasets.utils.diskcache import DiskCachedDataset
 from datasets.utils.pad_tensors import PadTensors
 from pathlib import Path
 import shutil
@@ -240,7 +241,7 @@ class CompressLibri(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.fits_into_ram = fits_into_ram
-        self.collate_fn = PadTensors()
+        self.collate_fn = PadTensors(require_padding=False)
         if not os.path.isabs(data_path):
             cwd = hydra.utils.get_original_cwd()
             data_path = os.path.abspath(os.path.join(cwd, data_path))
@@ -255,6 +256,9 @@ class CompressLibri(pl.LightningDataModule):
             transform=None,
             target_transform=None,
         )
+        self.train_dataset_ = DiskCachedDataset(
+            self.train_dataset_,
+            cache_path=data_path+"/cache/LibriTTS")
         self.train_dataset_, self.valid_dataset_, self.test_dataset_ = torch.utils.data.random_split(
             self.train_dataset_,
             [0.8, 0.1, 0.1],

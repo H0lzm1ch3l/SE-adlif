@@ -2,14 +2,27 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 
 class PadTensors:
-    def __init__(self, batch_first: bool = True):
+    """This class implement the specific collate logic for our data
+    each call function are resolve at object creation
+    this prevent control flow inside the dataset loop 
+    """
+    
+    def __init__(self, batch_first: bool = True, require_padding: bool = True):
         self.batch_first = batch_first
         self.batch_dim = 0 if batch_first else 1
         self.temp_dim = 1 if batch_first else 0
-
-
+        self.require_padding = require_padding
+        self.call_fn = self._call_with_padding if self.require_padding else self._call
     @staticmethod
-    def _call(batch, batch_first: bool):        
+    def _call(batch, batch_first: bool):
+        res = list(zip(*batch))  # type: ignore
+        res = [PadTensors.collate_tensor_fn(x) for x in res]
+        inputs, target, block_idx = res
+        dummy_target = torch.full_like(target[:, 0], fill_value=-1).unsqueeze(1)
+        target = torch.concatenate((dummy_target, target), dim=1)
+        return inputs, target, block_idx
+    @staticmethod
+    def _call_with_padding(batch, batch_first: bool):        
         inputs, target_list, block_idx = list(zip(*batch))  # type: ignore
 
         # If target is a scalar, convert it to a tensor
@@ -32,4 +45,15 @@ class PadTensors:
         return inputs, target, block_idx
 
     def __call__(self, batch):
-        return self._call(batch=batch, batch_first=self.batch_first)
+        return self.call_fn(batch=batch, batch_first=self.batch_first)
+    @staticmethod
+    def collate_tensor_fn(batch):
+        elem = batch[0]
+        out = None
+        if torch.utils.data.get_worker_info() is not None:
+            # If we're in a background process, concatenate directly into a
+            # shared memory tensor to avoid an extra copy
+            numel = sum(x.numel() for x in batch)
+            storage = elem._typed_storage()._new_shared(numel, device=elem.device)
+            out = elem.new(storage).resize_(len(batch), *list(elem.size()))
+        return torch.stack(batch, 0, out=out)

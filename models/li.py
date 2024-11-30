@@ -13,6 +13,27 @@ import matplotlib.pyplot as plt
 import numpy as np
 from omegaconf import DictConfig
 
+def ema_parallel(x:torch.Tensor, alpha: torch.Tensor):
+    """
+    Compute the exponential moving average (EMA) in parallel using PyTorch.
+    
+    Args:
+        x (torch.Tensor): Input sequence of shape (N, T, C) where N is the batch size and T is the sequence length.
+        alpha (float): Smoothing factor, 0 < alpha < 1.
+        
+    Returns:
+        torch.Tensor: EMA of shape (N, T, C).
+    """
+    # put the temporal dimension at the end
+    x = torch.permute(x, (0,2,1))
+    # Compute weights for the convolution
+    i = torch.arange(x.shape[-1], device=x.device, dtype=torch.int,)  # Indices
+    weights = (1 - alpha) * (alpha**i)  # Compute weights as a tensor
+    weights = weights.flip(0).broadcast_to(x.shape[-2], 1, x.shape[-1])    # Pad the input to simulate u_0 = 0
+    x_padded = F.pad(x, (weights.shape[-1] - 1, 0), mode="constant", value=0.0)  # Pad on the left
+    ema = F.conv1d(x_padded, weights, groups=x.shape[-2])
+    ema = torch.permute(ema, (0,2,1))
+    return ema
 class LI(Module):
     __constants__ = ["in_features", "out_features"]
     in_features: int
@@ -62,7 +83,7 @@ class LI(Module):
         return "in_features={}, out_features={}, bias={}".format(
             self.in_features, self.out_features, self.bias is not None
         )
-
+    @torch.jit.ignore
     def initial_state(
         self, batch_size: int, device: Optional[torch.device] = None
     ) -> tuple[Tensor,]:
@@ -77,12 +98,13 @@ class LI(Module):
     def forward(self, inputs):
         current = F.linear(inputs, self.weight, self.bias)
         decay_u = self.tau_u_trainer.get_decay()
-        u, = self.initial_state(inputs.shape[0], inputs.device)
-        out_buffer = torch.zeros(inputs.size(0), inputs.size(1), self.out_features, device=inputs.device)
-        for i, cur in enumerate(current.unbind(1)):
-            u = decay_u * u + (1 - decay_u) * cur
-            out_buffer[:, i] = u
-        return out_buffer
+        # u, = self.initial_state(inputs.shape[0], inputs.device)
+        # out_buffer = torch.zeros(inputs.size(0), inputs.size(1), self.out_features, device=inputs.device)
+        # for i, cur in enumerate(current.unbind(1)):
+        #     u = decay_u * u + (1 - decay_u) * cur
+        #     out_buffer[:, i] = u
+        # compute the exponential moving average directly without loop using conv1d
+        return ema_parallel(current, decay_u)
     
     @torch.jit.ignore
     def forward_cell(self, input_tensor: Tensor, states: Tensor) -> Tuple[Tensor, Tensor]:
@@ -107,6 +129,7 @@ class LI(Module):
         targets = targets.cpu().detach().numpy()
         
         block_idx = block_idx.cpu().detach().numpy()
+        targets_in_time = targets[1:]
         if auto_regression:
             targets_in_time = targets[1:]
         else:
