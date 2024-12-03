@@ -24,7 +24,7 @@ class Encoder(torch.nn.Module):
         super().__init__()
         self.cell = layer_map[cfg.cell]
         base_use_rec = cfg.use_recurrent
-        
+        self.skip_first_n = cfg.skip_first_n
         cfg.use_recurrent = cfg.first_layer_use_recurrent
         cfg.n_neurons = cfg.n_neurons_big
         base_thr = cfg.thr
@@ -46,9 +46,9 @@ class Encoder(torch.nn.Module):
         
     def forward(self, inputs):
         out = self.l1(inputs)
-        self.l1_spike_prob = out.mean(0).mean(0)
+        self.l1_spike_prob = out[:, self.skip_first_n:].mean(0).mean(0)
         out = self.l2(out)
-        self.l2_spike_prob = out.mean(0).mean(0)
+        self.l2_spike_prob = out[:, self.skip_first_n:].mean(0).mean(0)
 
         return out
     @torch.jit.ignore
@@ -78,28 +78,29 @@ class Decoder(torch.nn.Module):
         super().__init__()
         self.cell = layer_map[cfg.cell]
         self.light_decoder = cfg.light_decoder
+        self.skip_first_n = cfg.skip_first_n
         if self.light_decoder:
             self.forward = self.forward_light
             self.forward_with_states = self.forward_light_with_states
             cfg.input_size = cfg.n_neurons
             cfg.n_neurons = 1
         else:
-            cfg.input_size = cfg.n_neurons
-            cfg.n_neurons = cfg.n_neurons_small
-            cfg.use_recurrent = True
-
-            self.l1 = self.cell(cfg)
-            cfg.input_size = cfg.n_neurons
+            cfg.input_size = cfg.n_neurons_small
             cfg.n_neurons = cfg.n_neurons_big
-            cfg.use_recurrent = True
-            self.l2 = self.cell(cfg)
+            cfg.use_recurrent = False
+            cfg.thr = 1.0
+            self.l1 = self.cell(cfg)
+            # cfg.input_size = cfg.n_neurons
+            # cfg.n_neurons = cfg.n_neurons_big
+            # cfg.use_recurrent = True
+            # self.l2 = self.cell(cfg)
             
-            cfg.input_size = cfg.n_neurons
+            cfg.input_size = cfg.n_neurons_big
             cfg.n_neurons = 1
             self.forward = self.forward_full
             self.forward_with_states = self.forward_full_with_states
         self.l1_spike_prob = torch.empty(size=())
-        self.l2_spike_prob = torch.empty(size=())
+        # self.l2_spike_prob = torch.empty(size=())
         self.aux_out = torch.empty(size=())
         self.out_layer = LI(cfg)
         cfg.input_size = cfg.n_neurons_small
@@ -108,7 +109,7 @@ class Decoder(torch.nn.Module):
     def apply_parameter_constraints(self):
         if not self.light_decoder:
             self.l1.apply_parameter_constraints()
-            self.l2.apply_parameter_constraints()
+            # self.l2.apply_parameter_constraints()
         self.out_layer.apply_parameter_constraints()
     
     def forward_light(self, inputs: torch.Tensor) -> torch.Tensor:
@@ -116,9 +117,9 @@ class Decoder(torch.nn.Module):
         
     def forward_full(self, inputs):
         out = self.l1(inputs)
-        self.l1_spike_prob = out.mean(0).mean(0)
-        out = self.l2(out)
-        self.l2_spike_prob = out.mean(0).mean(0)
+        self.l1_spike_prob = out[:, self.skip_first_n:].mean(0).mean(0)
+        # out = self.l2(out)
+        # self.l2_spike_prob = out.mean(0).mean(0)
         out = self.out_layer(out)
         return out
     
@@ -141,8 +142,8 @@ class Decoder(torch.nn.Module):
         states = []
         s1 = self.l1.initial_state(inputs.shape[0], inputs.device)
         s1_list = []
-        s2 = self.l2.initial_state(inputs.shape[0], inputs.device)
-        s2_list = []
+        # s2 = self.l2.initial_state(inputs.shape[0], inputs.device)
+        # s2_list = []
         s_out = self.out_layer.initial_state(inputs.shape[0], inputs.device)
         s_out_list = [s_out,]
         out_sequence = []
@@ -150,16 +151,16 @@ class Decoder(torch.nn.Module):
             out, s1 = self.l1.forward_cell(x_t, s1)
             s1_list.append(s1)
             out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
-            out, s2 = self.l2.forward_cell(out, s2)
-            out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
-            s2_list.append(s2)
+            # out, s2 = self.l2.forward_cell(out, s2)
+            # out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
+            # s2_list.append(s2)
             out, s_out = self.out_layer.forward_cell(out, s_out)
             s_out_list.append(s_out)
             out_sequence.append(out)
         s1_list = torch.stack([torch.stack(x, dim=-2) for x in zip(*s1_list)], dim=0)
         states.append(s1_list)
-        s2_list = torch.stack([torch.stack(x, dim=-2) for x in zip(*s2_list)], dim=0)
-        states.append(s2_list)
+        # s2_list = torch.stack([torch.stack(x, dim=-2) for x in zip(*s2_list)], dim=0)
+        # states.append(s2_list)
         s_out_list = torch.stack([torch.stack(x, dim=-2) for x in zip(*s_out_list)], dim=0)
         states.append(s_out_list)
         out = torch.stack(out_sequence, dim=1)
@@ -341,7 +342,7 @@ class MLPSNN(pl.LightningModule):
             
         sum_spikes = [self.model.encoder.l1_spike_prob, self.model.encoder.l2_spike_prob]
         if not self.light_decoder:
-            sum_spikes.extend([self.model.decoder.l1_spike_prob, self.model.decoder.l2_spike_prob])
+            sum_spikes.extend([self.model.decoder.l1_spike_prob,]) # self.model.decoder.l2_spike_prob])
         reg_upper, log_upper = snn_regularization(sum_spikes, self.max_spike_prob, torch.tensor(self.max_layer_coeff, device=inputs.device), 'upper', reduce_layer='sum')
         reg_lower, log_lower = snn_regularization(sum_spikes, self.min_spike_prob, torch.tensor(self.min_layer_coeff, device=inputs.device), 'lower', reduce_layer='sum')
         log_upper.update(log_lower)
@@ -379,16 +380,20 @@ class MLPSNN(pl.LightningModule):
         )
         
         if batch_idx == 0:
+            
+            tmp_block_idx = block_idx.clone()
+            tmp_block_idx[:, :self.skip_first_n, :] = 0
             # determine a random example to visualized
             spike_probabilities = get_per_layer_spike_probs(
                 self.states,
-                block_idx,
+                tmp_block_idx,
             )
             rnd_batch_idx = torch.randint(0, inputs.shape[0], size=()).item()
             prev_layer_input = inputs[rnd_batch_idx]
             layers = [self.model.encoder.l1,self.model.encoder.l2,]
             if not self.light_decoder:
-                layers.extend([self.model.decoder.l1, self.model.decoder.l2, self.model.decoder.out_layer])
+                # layers.extend([self.model.decoder.l1, self.model.decoder.l2, self.model.decoder.out_layer])
+                layers.extend([self.model.decoder.l1, self.model.decoder.out_layer])
             else:
                 layers.append(self.model.decoder.out_layer)
                 
