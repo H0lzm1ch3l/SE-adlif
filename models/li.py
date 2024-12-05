@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -7,38 +7,17 @@ from torch.nn import Module
 from torch import Tensor
 from torch.nn.parameter import Parameter
 
-from models.helpers import get_event_indices, save_distributions_to_aim, save_fig_to_aim
+from models.helpers import get_event_indices, save_distributions_to_aim, save_fig_to_aim, generic_scan
 from module.tau_trainers import TauTrainer, get_tau_trainer_class
 import matplotlib.pyplot as plt
 import numpy as np
 from omegaconf import DictConfig
-
-def ema_parallel(x:torch.Tensor, alpha: torch.Tensor):
-    """
-    Compute the exponential moving average (EMA) in parallel using PyTorch.
-    
-    Args:
-        x (torch.Tensor): Input sequence of shape (N, T, C) where N is the batch size and T is the sequence length.
-        alpha (float): Smoothing factor, 0 < alpha < 1.
-        
-    Returns:
-        torch.Tensor: EMA of shape (N, T, C).
-    """
-    # put the temporal dimension at the end
-    x = torch.permute(x, (0,2,1))
-    # Compute weights for the convolution
-    i = torch.arange(x.shape[-1], device=x.device, dtype=torch.int,)  # Indices
-    weights = (1 - alpha) * (alpha**i)  # Compute weights as a tensor
-    weights = weights.flip(0).broadcast_to(x.shape[-2], 1, x.shape[-1])    # Pad the input to simulate u_0 = 0
-    x_padded = F.pad(x, (weights.shape[-1] - 1, 0), mode="constant", value=0.0)  # Pad on the left
-    ema = F.conv1d(x_padded, weights, groups=x.shape[-2])
-    ema = torch.permute(ema, (0,2,1))
-    return ema
+from functools import partial
 class LI(Module):
     __constants__ = ["in_features", "out_features"]
     in_features: int
     out_features: int
-    weight: Tensor
+    weight: torch.Tensor
 
     def __init__(
         self,
@@ -66,27 +45,37 @@ class LI(Module):
             self.tau_u_range[1],
             **factory_kwargs,
         )
-
+        self.unroll = cfg.get('unroll', 10)
+        def step_fn(alpha, carry, x):
+            u, = carry
+            u = alpha * u + (1 - alpha)*x
+            return (u,), u 
+        def wrapped_scan(u0: Parameter, x: Tensor,
+                         alpha: Parameter):
+            _step_fn = partial(step_fn, alpha)
+            return generic_scan(_step_fn, (u0, ), x, self.unroll)
+        self.wrapped_scan = torch.compile(wrapped_scan)
         self.reset_parameters()
-
+        
+    @torch.compiler.disable
     def reset_parameters(self):
         self.tau_u_trainer.reset_parameters()
-        nn.init.uniform_(
+        torch.nn.init.uniform_(
             self.weight,
             -1 * torch.sqrt(1 / torch.tensor(self.in_features)),
             torch.sqrt(1 / torch.tensor(self.in_features)),
         )
         torch.nn.init.zeros_(self.bias)
 
-    @torch.jit.ignore
+    @torch.compiler.disable
     def extra_repr(self) -> str:
         return "in_features={}, out_features={}, bias={}".format(
             self.in_features, self.out_features, self.bias is not None
         )
-    @torch.jit.ignore
+        
     def initial_state(
         self, batch_size: int, device: Optional[torch.device] = None
-    ) -> tuple[Tensor,]:
+    ) -> tuple[torch.Tensor,]:
         size = (batch_size, self.out_features)
         u = torch.zeros(size=size, 
             device=device, 
@@ -97,16 +86,11 @@ class LI(Module):
         return (u,)
     def forward(self, inputs):
         current = F.linear(inputs, self.weight, self.bias)
+        u, = self.initial_state(inputs.shape[0], device=inputs.device)
         decay_u = self.tau_u_trainer.get_decay()
-        # u, = self.initial_state(inputs.shape[0], inputs.device)
-        # out_buffer = torch.zeros(inputs.size(0), inputs.size(1), self.out_features, device=inputs.device)
-        # for i, cur in enumerate(current.unbind(1)):
-        #     u = decay_u * u + (1 - decay_u) * cur
-        #     out_buffer[:, i] = u
-        # compute the exponential moving average  using conv1d
-        return ema_parallel(current, decay_u)
+        return self.wrapped_scan(u, current, decay_u)
     
-    @torch.jit.ignore
+    @torch.compiler.disable
     def forward_cell(self, input_tensor: Tensor, states: Tensor) -> Tuple[Tensor, Tensor]:
         u_tm1, = states
         decay_u = self.tau_u_trainer.get_decay()
@@ -114,11 +98,11 @@ class LI(Module):
         u_t = decay_u * u_tm1 + (1.0 - decay_u) * current
         return u_t, (u_t,)
     
-    @torch.jit.ignore
+    @torch.compiler.disable
     def apply_parameter_constraints(self):
         self.tau_u_trainer.apply_parameter_constraints()
         
-    @torch.jit.ignore
+    @torch.compiler.disable
     @staticmethod
     def plot_states(layer_idx, inputs, states, targets, block_idx, output_size, auto_regression):
         figure, axes = plt.subplots(nrows=3, ncols=1, sharex="all", figsize=(8, 11))
@@ -160,7 +144,7 @@ class LI(Module):
         plt.close(figure)
         return figure
     
-    @torch.jit.ignore
+    @torch.compiler.disable
     def layer_stats(
             self,
             layer_idx: int,

@@ -27,6 +27,8 @@ n_neurons_small: 16
 first_layer_use_recurrent: False
 # lower threshold  (0.1) at the first layer seems to allow fast convergence
 first_layer_thr: 0.1
+
+
 # weight gain (spread) of ff_weight
 ff_gain: 10
 use_recurrent: True
@@ -56,8 +58,8 @@ n_epochs: 200
 dropout: 0.0
 
 # Time constant of output layer 
-tau_out_range: [20, 20]
-train_tau_out_method: 'fixed'
+tau_out_range: [5, 25]
+train_tau_out_method: 'interpolation'
 
 
 
@@ -87,10 +89,11 @@ min_window: 6 # min size of the FFT windows in power of two
 max_window: 9 # max size of the FTT windows in power of two
 
 # regularization parameters
-min_spike_prob: [0.1, 0.001, 0.1] # , 0.1]
-max_spike_prob: [0.2, 0.005, 0.2] #, 0.2]
-min_layer_coeff: [1000.0, 10.0, 1.0] #, 10.0] # encourage the first layer to spike
-max_layer_coeff: [10.0, 1000.0, 100.0] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
+min_spike_prob: [0.1, 0.01, 0.1] # , 0.1]
+max_spike_prob: [0.2, 0.02, 0.2] #, 0.2]
+min_layer_coeff: [1000.0, 1.0, 100.0] #, 10.0] # encourage the first layer to spike
+max_layer_coeff: [10.0, 100.0, 10.0] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
 
 
 random_seed: 42
+unroll: 50
