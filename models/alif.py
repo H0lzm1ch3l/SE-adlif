@@ -47,8 +47,8 @@ class EFAdLIF(Module):
         self.use_recurrent = cfg.get('use_recurrent', True)
         
         self.ff_gain = cfg.get('ff_gain', 1.0)
-        self.a_range = [0.0, 1.0]
-        self.b_range = [0.0, 2.0]
+        self.a_range =  cfg.get('a_range', [0.0, 1.0])
+        self.b_range = cfg.get('b_range',[0.0, 2.0])
         
 
 
