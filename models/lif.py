@@ -1,17 +1,17 @@
 
 from typing import Optional, Sequence
+
+import torch._dynamo.guards
 from models.helpers import SLAYER, get_event_indices, save_distributions_to_aim, save_fig_to_aim
 import torch
 import torch.nn.functional as F
 from torch.nn import Module
 from torch import Tensor
 from torch.nn.parameter import Parameter
-import os
 
 from module.tau_trainers import TauTrainer, get_tau_trainer_class
 from omegaconf import DictConfig
 import matplotlib.pyplot as plt
-
 class LIF(Module):
     __constants__ = ["in_features", "out_features"]
     in_features: int

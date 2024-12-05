@@ -1,14 +1,16 @@
-from typing import Optional, Sequence, Tuple
+from functools import partial
+from math import ceil
+import math
+from typing import Callable, Optional, Sequence, Tuple
 import torch
 from torch.nn import Module
 from torch import Tensor
 from torch.nn.parameter import Parameter
 import torch.nn.functional as F
-from models.helpers import SLAYER, get_event_indices, save_distributions_to_aim, save_fig_to_aim
+from models.helpers import get_event_indices, save_distributions_to_aim, save_fig_to_aim, spike_grad_injection_function, generic_scan
 from module.tau_trainers import TauTrainer, get_tau_trainer_class
 from omegaconf import DictConfig
 import matplotlib.pyplot as plt
-
 class EFAdLIF(Module):
     __constants__ = ["in_features", "out_features"]
     in_features: int
@@ -30,10 +32,11 @@ class EFAdLIF(Module):
         self.out_features = cfg.n_neurons
         self.dt =  cfg.get('dt', 1.0)
         thr = cfg.get('thr', 1.0)
+        self.unroll = cfg.get('unroll', 10)
         if isinstance(thr, Sequence):
             thr = torch.FloatTensor(self.out_features, device=device).uniform_(thr[0], thr[1])
         else:
-            thr = torch.Tensor([thr,])
+            thr = Tensor([thr,])
         self.register_buffer('thr', thr)
         self.alpha = cfg.get('alpha', 5.0)
         self.c = cfg.get('c', 0.4)
@@ -47,6 +50,8 @@ class EFAdLIF(Module):
         self.a_range = [0.0, 1.0]
         self.b_range = [0.0, 2.0]
         
+
+
         self.q = cfg.q
         
         self.tau_u_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_u_method)(
@@ -81,8 +86,30 @@ class EFAdLIF(Module):
         self.b = Parameter(torch.empty(self.out_features, **factory_kwargs))
         self.u0 = Parameter(torch.empty(self.out_features, **factory_kwargs))
         self.w0 = Parameter(torch.empty(self.out_features, **factory_kwargs))
-
         self.reset_parameters()
+        def step_fn(recurrent, alpha, beta, thr, a, b, carry, cur):
+            u_tm1, w_tm1, z_tm1 = carry
+            if self.use_recurrent:
+                cur_rec = F.linear(z_tm1, recurrent, None)
+                cur = cur + cur_rec
+            
+            u = alpha * u_tm1 + (1.0 - alpha) * (
+                cur - w_tm1
+            )
+            u_thr = u - thr
+            z = spike_grad_injection_function(u_thr, self.alpha, self.c)
+            u = u * (1 - z.detach())
+            w = (
+                beta * w_tm1 + (1.0 - beta) * (a * u_tm1 + b * z_tm1) * self.q
+                )
+            return (u, w, z), z
+        def wrapped_scan(u0: Parameter, w0: Parameter, 
+                         z0: Tensor, x: Tensor,
+                         recurrent: Parameter, alpha: Parameter, beta: Parameter, 
+                         thr: Tensor, a: Parameter, b: Parameter):
+            _step_fn = partial(step_fn, recurrent, alpha, beta, thr, a, b)
+            return generic_scan(_step_fn, (u0, w0, z0), x, self.unroll)
+        self.wrapped_scan = torch.compile(wrapped_scan)
     
     def reset_parameters(self) -> None:
         self.tau_u_trainer.reset_parameters()
@@ -98,8 +125,8 @@ class EFAdLIF(Module):
         torch.nn.init.zeros_(self.bias)
         
         # h0 states 
-        torch.nn.init.zeros_(self.u0)
-        torch.nn.init.zeros_(self.w0)
+        torch.nn.init.uniform_(self.u0, 0, self.thr.item())
+        torch.nn.init.uniform_(self.w0, -1, 1)
         if self.use_recurrent:
             torch.nn.init.orthogonal_(
                 self.recurrent,
@@ -111,13 +138,13 @@ class EFAdLIF(Module):
         
     def initial_state(self, batch_size:int, device: Optional[torch.device] = None) -> tuple[Tensor, Tensor, Tensor]:
         size = (batch_size, self.out_features)
-        u = torch.zeros(
-            size=size, 
-            device=device, 
-            dtype=torch.float, 
-            layout=None, 
-            pin_memory=None
-        )
+        # u = torch.zeros(
+        #     size=size, 
+        #     device=device, 
+        #     dtype=torch.float, 
+        #     layout=None, 
+        #     pin_memory=None
+        # )
         z = torch.zeros(
             size=size, 
             device=device, 
@@ -132,42 +159,24 @@ class EFAdLIF(Module):
             layout=None, 
             pin_memory=None
         )
-        return u, z, w
-    @torch.jit.ignore
+        return self.u0, z, w
+    @torch.compiler.disable
     def apply_parameter_constraints(self):
         self.tau_u_trainer.apply_parameter_constraints()
         self.tau_w_trainer.apply_parameter_constraints()
         self.a.data = torch.clamp(self.a, min=self.a_range[0], max=self.a_range[1])
         self.b.data = torch.clamp(self.b, min=self.b_range[0], max=self.b_range[1])
+        self.u0.data = torch.clamp(self.u0, -self.thr, self.thr)
         
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+    def forward(self, inputs: Tensor) -> Tensor:
         current = F.linear(inputs, self.weight, self.bias)
         decay_u = self.tau_u_trainer.get_decay()
         decay_w = self.tau_w_trainer.get_decay()
         u, z, w = self.initial_state(int(inputs.shape[0]), inputs.device)
-        
-        out_buffer = torch.zeros(inputs.size(0), inputs.size(1), self.out_features, device=inputs.device)
-        for i, cur in enumerate(current.unbind(1)):
-            if self.use_recurrent:
-                cur_rec = F.linear(z, self.recurrent, None)
-                cur = cur + cur_rec
-            
-            u_t = decay_u * u + (1.0 - decay_u) * (
-                cur - w
-            )
-            u_thr = u_t - self.thr
-            # Forward Gradient Injection trick (credits to Sebastian Otte)
-            z_t = torch.heaviside(u_thr, torch.as_tensor(0.0).type(u_thr.dtype)).detach() + (u_thr - u_thr.detach()) * SLAYER(u_thr, self.alpha, self.c).detach()
-            u_t = u_t * (1 - z_t.detach())
-            w = (
-                decay_w * w + (1.0 - decay_w) * (self.a * u + self.b * z) * self.q
-                )
-            z = z_t
-            u = u_t
-            out_buffer[:, i] = z
+        out_buffer = self.wrapped_scan(u, w, z, current, decay_u, decay_w, self.thr, self.a, self.b)
         return out_buffer
     
-    @torch.jit.ignore
+    @torch.compiler.disable
     def forward_cell(
         self, input_tensor: Tensor,  states: Tuple[Tensor, Tensor, Tensor]
     ) -> Tuple[Tensor, Tensor]:
@@ -185,7 +194,7 @@ class EFAdLIF(Module):
         
         u_thr = u_t - self.thr
         # Forward Gradient Injection trick (credits to Sebastian Otte)
-        z_t = torch.heaviside(u_thr, torch.as_tensor(0.0).type(u_thr.dtype)).detach() + (u_thr - u_thr.detach()) * SLAYER(u_thr, self.alpha, self.c).detach()
+        z_t = spike_grad_injection_function(u_thr, self.alpha, self.c)
         u_t = u_t * (1 - z_t.detach())
         w_t = (
             decay_w * w_tm1
@@ -193,7 +202,7 @@ class EFAdLIF(Module):
         )
         return z_t, (u_t, z_t, w_t)
     
-    @torch.jit.ignore
+    @torch.compiler.disable
     @staticmethod
     def plot_states(layer_idx, inputs, states):
         figure, axes = plt.subplots(
@@ -217,17 +226,18 @@ class EFAdLIF(Module):
         figure.suptitle(f"Layer {layer_idx}\n Nb spikes: {nb_spikes_str},")
         plt.close(figure)
         return figure
-    @torch.jit.ignore
-    def layer_stats(self, layer_idx: int, logger, epoch_step: int, spike_probabilities: torch.Tensor,
-                    inputs: torch.Tensor, states: torch.Tensor, **kwargs):
+    
+    @torch.compiler.disable
+    def layer_stats(self, layer_idx: int, logger, epoch_step: int, spike_probabilities: Tensor,
+                    inputs: Tensor, states: Tensor, **kwargs):
         """Generate statistisc from the layer weights and a plot of the layer dynamics for a random task example
         Args:
             layer_idx (int): index for the layer in the hierarchy
             logger (_type_): aim logger reference
             epoch_step (int): epoch  
-            spike_probability (torch.Tensor): spike probability for each neurons
-            inputs (torch.Tensor): random example 
-            states (torch.Tensor): states associated to the computation of the random example
+            spike_probability (Tensor): spike probability for each neurons
+            inputs (Tensor): random example 
+            states (Tensor): states associated to the computation of the random example
         """
 
         save_fig_to_aim(
@@ -243,7 +253,9 @@ class EFAdLIF(Module):
                          ("spike_prob", spike_probabilities.cpu().detach().numpy()),
                          ("a", self.a.cpu().detach().numpy()),
                         ("b", self.b.cpu().detach().numpy()),
-                         ("bias", self.bias.cpu().detach().numpy())
+                         ("bias", self.bias.cpu().detach().numpy()),
+                         ('u0', self.u0.cpu().numpy()),
+                         ('w0', self.w0.cpu().numpy())
                         ]
 
         if self.use_recurrent:
@@ -259,29 +271,42 @@ class EFAdLIF(Module):
         )
     
 class SEAdLIF(EFAdLIF):
+    def __init__(self, cfg, device=None, dtype=None, **kwargs):
+        super().__init__(cfg, device, dtype, **kwargs)
+
+        def step_fn(recurrent, alpha, beta, thr, a, b, carry, cur):
+            u_tm1, w_tm1, z_tm1 = carry
+            if self.use_recurrent:
+                cur_rec = F.linear(z_tm1, recurrent, None)
+                cur = cur + cur_rec
+            
+            u = alpha * u_tm1 + (1.0 - alpha) * (
+                cur - w_tm1
+            )
+            u_thr = u - thr
+            z = spike_grad_injection_function(u_thr, self.alpha, self.c)
+            u = u * (1 - z.detach())
+            w = (
+                beta * w_tm1 + (1.0 - beta) * (a * u + b * z) * self.q
+                )
+            return (u, w, z), z
+
+        def wrapped_scan(u0: Parameter, w0: Parameter, 
+                         z0: Tensor, x: Tensor,
+                         recurrent: Parameter, alpha: Parameter, beta: Parameter, 
+                         thr: Tensor, a: Parameter, b: Parameter):
+            _step_fn = partial(step_fn, recurrent, alpha, beta, thr, a, b)
+            return generic_scan(_step_fn, (u0, w0, z0), x, self.unroll)
+            
+        self.wrapped_scan = torch.compile(wrapped_scan)
+    
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         current = F.linear(inputs, self.weight, self.bias)
         decay_u = self.tau_u_trainer.get_decay()
         decay_w = self.tau_w_trainer.get_decay()
         u, z, w = self.initial_state(int(inputs.shape[0]), inputs.device)
-        
-        out_buffer = torch.zeros(inputs.size(0), inputs.size(1), self.out_features, device=inputs.device)
-        for i, cur in enumerate(current.unbind(1)):
-            if self.use_recurrent:
-                cur_rec = F.linear(z, self.recurrent, None)
-                cur = cur + cur_rec
-            
-            u = decay_u * u + (1.0 - decay_u) * (
-                cur - w
-            )
-            u_thr = u - self.thr
-            # Forward Gradient Injection trick (credits to Sebastian Otte)
-            z = torch.heaviside(u_thr, torch.as_tensor(0.0).type(u_thr.dtype)).detach() + (u_thr - u_thr.detach()) * SLAYER(u_thr, self.alpha, self.c).detach()
-            u = u * (1 - z.detach())
-            w = (
-                decay_w * w + (1.0 - decay_w) * (self.a * u + self.b * z) * self.q
-                )
-            out_buffer[:, i] = z
+        out_buffer = self.wrapped_scan(u, w, z, current, self.recurrent, decay_u, decay_w, self.thr, self.a, self.b)
+
         return out_buffer
     @torch.jit.ignore
     def forward_cell(
@@ -300,7 +325,7 @@ class SEAdLIF(EFAdLIF):
         )
         u_thr = u_t - self.thr
         # Forward Gradient Injection trick (credits to Sebastian Otte)
-        z_t = torch.heaviside(u_thr, torch.as_tensor(0.0).type(u_thr.dtype)).detach() + (u_thr - u_thr.detach()) * SLAYER(u_thr, self.alpha, self.c).detach()
+        z_t = spike_grad_injection_function(u_thr, self.alpha, self.c)
         u_t = u_t * (1 - z_t.detach())
         
         w_t = (

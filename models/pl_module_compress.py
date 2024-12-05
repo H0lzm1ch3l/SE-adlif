@@ -11,8 +11,9 @@ from models.alif import EFAdLIF, SEAdLIF
 from models.li import LI
 from models.lif import LIF
 from models.rnn import LSTMCellWrapper
-
-
+torch.set_float32_matmul_precision('high')
+torch.autograd.set_detect_anomaly(True)
+torch._dynamo.config.cache_size_limit = 64
 layer_map = {
     "lif": LIF,
     "se_adlif": SEAdLIF,
@@ -87,20 +88,13 @@ class Decoder(torch.nn.Module):
         else:
             cfg.input_size = cfg.n_neurons_small
             cfg.n_neurons = cfg.n_neurons_big
-            cfg.use_recurrent = False
-            cfg.thr = 1.0
             self.l1 = self.cell(cfg)
-            # cfg.input_size = cfg.n_neurons
-            # cfg.n_neurons = cfg.n_neurons_big
-            # cfg.use_recurrent = True
-            # self.l2 = self.cell(cfg)
             
             cfg.input_size = cfg.n_neurons_big
             cfg.n_neurons = 1
             self.forward = self.forward_full
             self.forward_with_states = self.forward_full_with_states
         self.l1_spike_prob = torch.empty(size=())
-        # self.l2_spike_prob = torch.empty(size=())
         self.aux_out = torch.empty(size=())
         self.out_layer = LI(cfg)
         cfg.input_size = cfg.n_neurons_small
@@ -214,14 +208,13 @@ class MLPSNN(pl.LightningModule):
         self.auto_regression =  cfg.get('auto_regression', False)
         self.output_size = cfg.dataset.num_classes
         self.batch_size = cfg.dataset.batch_size
-        self.model = torch.jit.script(Net(cfg)) #, fullgraph=True, dynamic=False)#, example_inputs=[torch.zeros([256, 1024, 1], dtype=torch.float),])
-        
+        self.model = Net(cfg) #, fullgraph=True, dynamic=False)#, example_inputs=[torch.zeros([256, 1024, 1], dtype=torch.float),])
+        self.model = torch.compile(self.model, dynamic=True)
         self.output_func = cfg.get('loss_agg', 'softmax')
         self.init_metrics_and_loss()
         self.save_hyperparameters()
         self.automatic_optimization=False
         self.loss = MultiScaleMelSpetroLoss(cfg.dataset.sampling_freq, cfg.n_mels, cfg.min_window, cfg.max_window)
-        # self.forward = torch.compile(self.pre_forward, fullgraph=True)
         # regularization parameters
         self.min_spike_prob = cfg.min_spike_prob
         self.max_spike_prob = cfg.max_spike_prob
