@@ -4,67 +4,79 @@ defaults:
   - /dataset: compress_libri
 
 exp_name: compres_libri_SE_adLIF
+unroll_factor: 50
+encoder:
+  dropout: 0.0
+  l1:
+    # input size 
+    cell: se_adlif
+    input_size: 1
+    n_neurons: 600
+    use_recurrent: False
+    thr: 0.1
+    # gain for feedforward weight initialization
+    ff_gain: 10
+    # Range of tau_u
+    tau_u_range: [5, 25]
+    # Range of tau_w
+    tau_w_range: [60, 300]
+    a_range: [0, 1]
+    b_range: [0, 2]
+    q: 120
+    unroll: ${unroll_factor}
+  l2:
+    cell: se_adlif
+    input_size: 600
+    n_neurons: 16
+    use_recurrent: True
+    thr: 1.0
+    # gain for feedforward weight initialization
+    ff_gain: 10
+    # Range of tau_u
+    tau_u_range: [5, 25]
+    # Range of tau_w
+    tau_w_range: [60, 300]
+    a_range: [0, 1]
+    b_range: [0, 2]
+    q: 120
+    unroll: ${unroll_factor}
+decoder:
+  dropout: 0.0
+  light_decoder: True
+  l1:
+    cell: se_adlif
+    input_size: 16
+    n_neurons: 16
+    use_recurrent: True
+    thr: 1.0
+    # gain for feedforward weight initialization
+    ff_gain: 10
+    # Range of tau_u
+    tau_u_range: [5, 25]
+    # Range of tau_w
+    tau_w_range: [60, 300]
+    a_range: [0, 1]
+    b_range: [0, 2]
+    q: 120
+    unroll: ${unroll_factor}
+  l_out:
+    input_size: 16
+    n_neurons: 1
+    reduce: 'none' # perform reduce operation on the n_neurons dim (none, mean, sum)
+    # Time constant of output layer 
 
-# Which cell to use
-cell: se_adlif
-
-auto_regression: True
-
-# input size 
-input_size: 1
-# number of neurons (placeholder for not braking config reading by the SNN module)
-
-n_neurons: 600
-# number of neurons in the big layer
-n_neurons_big: 600
-# number of neurons of the small layer
-n_neurons_small: 128
-
-### first layer specific parameters
-
-# not using recurrent connection seems to prevent the neurons to self-amplified
-# even when their is no input
-first_layer_use_recurrent: False
-# lower threshold  (0.1) at the first layer seems to allow fast convergence
-first_layer_thr: 0.1
-
-
-# weight gain (spread) of ff_weight
-ff_gain: 10
-use_recurrent: True
-
-# light decoder is a decoder with only a LI layer
-light_decoder: False
-
-# Factor for reparametrization of a and b (see paper)
-q: 12
-
-# Range of tau_u
-tau_u_range: [5, 25]
-
-# Range of tau_w
-tau_w_range: [60, 300]
+    train_tau_u_method: 'interpolation'
+    tau_u_range: [5, 25]
 
 # Parameters of SLAYER
 alpha: 5.0
 c: 0.4
 thr: 1.0
 dt: 1.0
+
 # Number of epochs
 n_epochs: 200
 
-
-# Dropout rate
-dropout: 0.0
-
-# Time constant of output layer 
-tau_out_range: [5, 25]
-train_tau_out_method: 'interpolation'
-
-
-
-# Loss aggregation
-loss_agg: MSE
 
 # Metric tracking
 tracking_metric: val_loss
@@ -96,6 +108,3 @@ max_layer_coeff: [10.0, 100.0, 10.0] # , 10.0] # here we may encourage lower spi
 
 
 random_seed: 42
-unroll: 50
-
-compile: true

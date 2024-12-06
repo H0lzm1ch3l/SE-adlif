@@ -13,6 +13,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from omegaconf import DictConfig
 from functools import partial
+reduce_map = {
+    'none': lambda x: x,
+    'mean': lambda x: torch.mean(x, dim=-1, keepdim=True),
+    'sum': lambda x: torch.sum(x, dim=-1, keepdim=True)
+}
 class LI(Module):
     __constants__ = ["in_features", "out_features"]
     in_features: int
@@ -29,10 +34,11 @@ class LI(Module):
         factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__(**kwargs)
         self.in_features = cfg.input_size
-        self.out_features = cfg.dataset.num_classes
+        self.out_features = cfg.n_neurons
         self.dt = cfg.get('dt', 1.0)
-        self.tau_u_range = cfg.tau_out_range
-        self.train_tau_u_method = cfg.get('train_tau_out_method', 'fixed')
+        self.tau_u_range = cfg.tau_u_range
+        self.train_tau_u_method = cfg.get('train_tau_u_method', 'fixed')
+        
         self.weight = Parameter(
             torch.empty((self.out_features, self.in_features), **factory_kwargs)
         )
@@ -46,6 +52,8 @@ class LI(Module):
             **factory_kwargs,
         )
         self.unroll = cfg.get('unroll', 10)
+        self.reduce_type = cfg.get('reduce', 'none')
+        self.reduce_fn = reduce_map[self.reduce_type]
         def step_fn(alpha, carry, x):
             u, = carry
             u = alpha * u + (1 - alpha)*x
@@ -91,7 +99,7 @@ class LI(Module):
         current = F.linear(inputs, self.weight, self.bias)
         u, = self.initial_state(inputs.shape[0], device=inputs.device)
         decay_u = self.tau_u_trainer.get_decay()
-        return self.wrapped_scan(u, current, decay_u)
+        return self.reduce_fn(self.wrapped_scan(u, current, decay_u))
     
     @torch.compiler.disable
     def forward_cell(self, input_tensor: Tensor, states: Tensor) -> Tuple[Tensor, Tensor]:
@@ -99,7 +107,7 @@ class LI(Module):
         decay_u = self.tau_u_trainer.get_decay()
         current = F.linear(input_tensor, self.weight, self.bias)
         u_t = decay_u * u_tm1 + (1.0 - decay_u) * current
-        return u_t, (u_t,)
+        return self.reduce_fn(u_t), (u_t,)
     
     @torch.compiler.disable
     def apply_parameter_constraints(self):
