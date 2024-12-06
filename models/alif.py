@@ -107,8 +107,10 @@ class EFAdLIF(Module):
                          z0: Tensor, x: Tensor,
                          recurrent: Parameter, alpha: Parameter, beta: Parameter, 
                          thr: Tensor, a: Parameter, b: Parameter):
-            _step_fn = partial(step_fn, recurrent, alpha, beta, thr, a, b)
-            return generic_scan(_step_fn, (u0, w0, z0), x, self.unroll)
+            def wrapped_step(carry, cur):
+                return step_fn(recurrent, alpha, beta, thr, a, b, carry, cur)
+
+            return generic_scan(wrapped_step, (u0, w0, z0), x, self.unroll)
         self.wrapped_scan = torch.compile(wrapped_scan)
     
     def reset_parameters(self) -> None:
@@ -150,14 +152,16 @@ class EFAdLIF(Module):
             device=device, 
             dtype=torch.float, 
             layout=None, 
-            pin_memory=None
+            pin_memory=None,
+            requires_grad=True
         )
         w = torch.zeros(
             size=size,
             device=device, 
             dtype=torch.float, 
             layout=None, 
-            pin_memory=None
+            pin_memory=None,
+            requires_grad=True
         )
         return self.u0, z, w
     @torch.compiler.disable
@@ -295,9 +299,11 @@ class SEAdLIF(EFAdLIF):
                          z0: Tensor, x: Tensor,
                          recurrent: Parameter, alpha: Parameter, beta: Parameter, 
                          thr: Tensor, a: Parameter, b: Parameter):
-            _step_fn = partial(step_fn, recurrent, alpha, beta, thr, a, b)
-            return generic_scan(_step_fn, (u0, w0, z0), x, self.unroll)
-            
+            def wrapped_step(carry, cur):
+                return step_fn(recurrent, alpha, beta, thr, a, b, carry, cur)
+            # _step_fn = partial(step_fn, recurrent, alpha, beta, thr, a, b)
+
+            return generic_scan(wrapped_step, (u0, w0, z0), x, self.unroll)
         self.wrapped_scan = torch.compile(wrapped_scan)
     
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
