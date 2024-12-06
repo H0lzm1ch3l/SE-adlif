@@ -54,7 +54,10 @@ class LI(Module):
                          alpha: Parameter):
             _step_fn = partial(step_fn, alpha)
             return generic_scan(_step_fn, (u0, ), x, self.unroll)
-        self.wrapped_scan = torch.compile(wrapped_scan)
+        if cfg.get("compile", False):
+            self.wrapped_scan = torch.compile(wrapped_scan)
+        else:
+            self.wrapped_scan = wrapped_scan
         self.reset_parameters()
         
     @torch.compiler.disable
