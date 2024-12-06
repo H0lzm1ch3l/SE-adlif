@@ -18,7 +18,7 @@ n_neurons: 600
 # number of neurons in the big layer
 n_neurons_big: 600
 # number of neurons of the small layer
-n_neurons_small: 16
+n_neurons_small: 128
 
 ### first layer specific parameters
 
@@ -34,10 +34,10 @@ ff_gain: 10
 use_recurrent: True
 
 # light decoder is a decoder with only a LI layer
-light_decoder: True
+light_decoder: False
 
 # Factor for reparametrization of a and b (see paper)
-q: 120
+q: 12
 
 # Range of tau_u
 tau_u_range: [5, 25]
@@ -97,3 +97,5 @@ max_layer_coeff: [10.0, 100.0, 10.0] # , 10.0] # here we may encourage lower spi
 
 random_seed: 42
 unroll: 50
+
+compile: true

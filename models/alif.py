@@ -11,6 +11,7 @@ from models.helpers import get_event_indices, save_distributions_to_aim, save_fi
 from module.tau_trainers import TauTrainer, get_tau_trainer_class
 from omegaconf import DictConfig
 import matplotlib.pyplot as plt
+
 class EFAdLIF(Module):
     __constants__ = ["in_features", "out_features"]
     in_features: int
@@ -47,8 +48,8 @@ class EFAdLIF(Module):
         self.use_recurrent = cfg.get('use_recurrent', True)
         
         self.ff_gain = cfg.get('ff_gain', 1.0)
-        self.a_range = [0.0, 1.0]
-        self.b_range = [0.0, 2.0]
+        self.a_range = [0.0, 10.0]
+        self.b_range = [0.0, 20.0]
         
 
 
@@ -109,7 +110,11 @@ class EFAdLIF(Module):
                          thr: Tensor, a: Parameter, b: Parameter):
             _step_fn = partial(step_fn, recurrent, alpha, beta, thr, a, b)
             return generic_scan(_step_fn, (u0, w0, z0), x, self.unroll)
-        self.wrapped_scan = torch.compile(wrapped_scan)
+        
+        if cfg.get("compile", False):
+            self.wrapped_scan = torch.compile(wrapped_scan)
+        else:
+            self.wrapped_scan = wrapped_scan
     
     def reset_parameters(self) -> None:
         self.tau_u_trainer.reset_parameters()
@@ -297,8 +302,11 @@ class SEAdLIF(EFAdLIF):
                          thr: Tensor, a: Parameter, b: Parameter):
             _step_fn = partial(step_fn, recurrent, alpha, beta, thr, a, b)
             return generic_scan(_step_fn, (u0, w0, z0), x, self.unroll)
-            
-        self.wrapped_scan = torch.compile(wrapped_scan)
+        
+        if cfg.get("compile", False):
+            self.wrapped_scan = torch.compile(wrapped_scan)
+        else:
+            self.wrapped_scan = wrapped_scan
     
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         current = F.linear(inputs, self.weight, self.bias)
