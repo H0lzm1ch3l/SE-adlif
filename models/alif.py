@@ -7,7 +7,7 @@ from torch.nn import Module
 from torch import Tensor
 from torch.nn.parameter import Parameter
 import torch.nn.functional as F
-from models.helpers import get_event_indices, save_distributions_to_aim, save_fig_to_aim, spike_grad_injection_function, generic_scan
+from models.helpers import get_event_indices, save_distributions_to_aim, save_fig_to_aim, spike_grad_injection_function, generic_scan, generic_scan_with_states
 from module.tau_trainers import TauTrainer, get_tau_trainer_class
 from omegaconf import DictConfig
 import matplotlib.pyplot as plt
@@ -88,7 +88,7 @@ class EFAdLIF(Module):
         self.w0 = Parameter(torch.empty(self.out_features, **factory_kwargs))
         self.reset_parameters()
         def step_fn(recurrent, alpha, beta, thr, a, b, carry, cur):
-            u_tm1, w_tm1, z_tm1 = carry
+            u_tm1, z_tm1, w_tm1 = carry
             if self.use_recurrent:
                 cur_rec = F.linear(z_tm1, recurrent, None)
                 cur = cur + cur_rec
@@ -102,16 +102,24 @@ class EFAdLIF(Module):
             w = (
                 beta * w_tm1 + (1.0 - beta) * (a * u_tm1 + b * z_tm1) * self.q
                 )
-            return (u, w, z), z
-        def wrapped_scan(u0: Parameter, w0: Parameter, 
-                         z0: Tensor, x: Tensor,
+            return (u, z, w), z
+        def wrapped_scan(u0: Parameter, z0: Tensor, w0: Parameter, 
+                         x: Tensor,
                          recurrent: Parameter, alpha: Parameter, beta: Parameter, 
                          thr: Tensor, a: Parameter, b: Parameter):
             def wrapped_step(carry, cur):
                 return step_fn(recurrent, alpha, beta, thr, a, b, carry, cur)
 
-            return generic_scan(wrapped_step, (u0, w0, z0), x, self.unroll)
+            return generic_scan(wrapped_step, (u0, z0, w0), x, self.unroll)
+        def wrapped_scan_with_states(u0: Parameter, z0: Tensor, w0: Parameter, x: Tensor,
+                         recurrent: Parameter, alpha: Parameter, beta: Parameter, 
+                         thr: Tensor, a: Parameter, b: Parameter):
+            def wrapped_step(carry, cur):
+                return step_fn(recurrent, alpha, beta, thr, a, b, carry, cur)
+
+            return generic_scan_with_states(wrapped_step, (u0, z0, w0), x, self.unroll)
         self.wrapped_scan = torch.compile(wrapped_scan)
+        self.wrapped_scan_with_states = wrapped_scan_with_states
     
     def reset_parameters(self) -> None:
         self.tau_u_trainer.reset_parameters()
@@ -140,13 +148,13 @@ class EFAdLIF(Module):
         
     def initial_state(self, batch_size:int, device: Optional[torch.device] = None) -> tuple[Tensor, Tensor, Tensor]:
         size = (batch_size, self.out_features)
-        # u = torch.zeros(
-        #     size=size, 
-        #     device=device, 
-        #     dtype=torch.float, 
-        #     layout=None, 
-        #     pin_memory=None
-        # )
+        u = torch.zeros(
+            size=size, 
+            device=device, 
+            dtype=torch.float, 
+            layout=None, 
+            pin_memory=None
+        )
         z = torch.zeros(
             size=size, 
             device=device, 
@@ -163,8 +171,8 @@ class EFAdLIF(Module):
             pin_memory=None,
             requires_grad=True
         )
-        return self.u0, z, w
-    @torch.compiler.disable
+        return self.u0.unsqueeze(0), z, w
+
     def apply_parameter_constraints(self):
         self.tau_u_trainer.apply_parameter_constraints()
         self.tau_w_trainer.apply_parameter_constraints()
@@ -177,34 +185,17 @@ class EFAdLIF(Module):
         decay_u = self.tau_u_trainer.get_decay()
         decay_w = self.tau_w_trainer.get_decay()
         u, z, w = self.initial_state(int(inputs.shape[0]), inputs.device)
-        out_buffer = self.wrapped_scan(u, w, z, current, decay_u, decay_w, self.thr, self.a, self.b)
+        out_buffer = self.wrapped_scan(u, z, w, current, self.recurrent, decay_u, decay_w, self.thr, self.a, self.b)
         return out_buffer
-    
-    @torch.compiler.disable
-    def forward_cell(
-        self, input_tensor: Tensor,  states: Tuple[Tensor, Tensor, Tensor]
-    ) -> Tuple[Tensor, Tensor]:
-        u_tm1, z_tm1, w_tm1 = states
+
+    @torch.no_grad()
+    def forward_with_states(self, inputs) -> Tuple[Tensor, Tensor]:
+        current = F.linear(inputs, self.weight, self.bias)
         decay_u = self.tau_u_trainer.get_decay()
         decay_w = self.tau_w_trainer.get_decay()
-        soma_current = F.linear(input_tensor, self.weight, self.bias)
-        if self.use_recurrent:
-            soma_rec_current = F.linear(z_tm1, self.recurrent, None)
-            soma_current += soma_rec_current
-            
-        u_t = decay_u * u_tm1 + (1.0 - decay_u) * (
-            soma_current - w_tm1
-        )
-        
-        u_thr = u_t - self.thr
-        # Forward Gradient Injection trick (credits to Sebastian Otte)
-        z_t = spike_grad_injection_function(u_thr, self.alpha, self.c)
-        u_t = u_t * (1 - z_t.detach())
-        w_t = (
-            decay_w * w_tm1
-            + (1.0 - decay_w) * (self.a * u_tm1 + self.b * z_tm1) * self.q
-        )
-        return z_t, (u_t, z_t, w_t)
+        u, z, w = self.initial_state(int(inputs.shape[0]), inputs.device)
+        states, out = self.wrapped_scan_with_states(u, z, w, current, self.recurrent, decay_u, decay_w, self.thr, self.a, self.b)
+        return states, out
     
     @torch.compiler.disable
     @staticmethod
@@ -279,7 +270,7 @@ class SEAdLIF(EFAdLIF):
         super().__init__(cfg, device, dtype, **kwargs)
 
         def step_fn(recurrent, alpha, beta, thr, a, b, carry, cur):
-            u_tm1, w_tm1, z_tm1 = carry
+            u_tm1, z_tm1, w_tm1 = carry
             if self.use_recurrent:
                 cur_rec = F.linear(z_tm1, recurrent, None)
                 cur = cur + cur_rec
@@ -293,49 +284,25 @@ class SEAdLIF(EFAdLIF):
             w = (
                 beta * w_tm1 + (1.0 - beta) * (a * u + b * z) * self.q
                 )
-            return (u, w, z), z
+            return (u, z, w), z
 
-        def wrapped_scan(u0: Parameter, w0: Parameter, 
-                         z0: Tensor, x: Tensor,
+        def wrapped_scan(u0: Parameter, z0: Tensor, w0: Parameter, 
+                          x: Tensor,
                          recurrent: Parameter, alpha: Parameter, beta: Parameter, 
                          thr: Tensor, a: Parameter, b: Parameter):
             def wrapped_step(carry, cur):
                 return step_fn(recurrent, alpha, beta, thr, a, b, carry, cur)
             # _step_fn = partial(step_fn, recurrent, alpha, beta, thr, a, b)
 
-            return generic_scan(wrapped_step, (u0, w0, z0), x, self.unroll)
-        self.wrapped_scan = torch.compile(wrapped_scan)
-    
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        current = F.linear(inputs, self.weight, self.bias)
-        decay_u = self.tau_u_trainer.get_decay()
-        decay_w = self.tau_w_trainer.get_decay()
-        u, z, w = self.initial_state(int(inputs.shape[0]), inputs.device)
-        out_buffer = self.wrapped_scan(u, w, z, current, self.recurrent, decay_u, decay_w, self.thr, self.a, self.b)
+            return generic_scan(wrapped_step, (u0, z0, w0), x, self.unroll)
+        def wrapped_scan_with_states(u0: Parameter, z0: Tensor, w0: Parameter, 
+                          x: Tensor,
+                         recurrent: Parameter, alpha: Parameter, beta: Parameter, 
+                         thr: Tensor, a: Parameter, b: Parameter):
+            def wrapped_step(carry, cur):
+                return step_fn(recurrent, alpha, beta, thr, a, b, carry, cur)
+            # _step_fn = partial(step_fn, recurrent, alpha, beta, thr, a, b)
 
-        return out_buffer
-    @torch.jit.ignore
-    def forward_cell(
-        self, input_tensor: Tensor, states: Tuple[Tensor, Tensor, Tensor]
-    ) -> Tuple[Tensor, Tensor]:
-        u_tm1, z_tm1, w_tm1 = states
-        decay_u = self.tau_u_trainer.get_decay()
-        decay_w = self.tau_w_trainer.get_decay()
-        soma_current = F.linear(input_tensor, self.weight, self.bias)
-        if self.use_recurrent:
-            soma_rec_current = F.linear(z_tm1, self.recurrent, None)
-            soma_current += soma_rec_current
-            
-        u_t = decay_u * u_tm1 + (1.0 - decay_u) * (
-            soma_current - w_tm1
-        )
-        u_thr = u_t - self.thr
-        # Forward Gradient Injection trick (credits to Sebastian Otte)
-        z_t = spike_grad_injection_function(u_thr, self.alpha, self.c)
-        u_t = u_t * (1 - z_t.detach())
-        
-        w_t = (
-            decay_w * w_tm1 + (1.0 - decay_w) * (self.a * u_t + self.b * z_t ) * self.q
-        )
-        return z_t, (u_t, z_t, w_t)
-    
+            return generic_scan_with_states(wrapped_step, (u0, z0, w0), x, self.unroll)
+        self.wrapped_scan = torch.compile(wrapped_scan)
+        self.wrapped_scan_with_states = wrapped_scan_with_states

@@ -126,3 +126,30 @@ def generic_scan(
 
     do_uncompiled_loop()
     return out_ys
+
+def generic_scan_with_states(
+    f: Callable[[tuple[torch.Tensor, ...], torch.Tensor], tuple[tuple[torch.Tensor, ...], torch.Tensor]], # f(s_t, x) -> (s_t+1, y)
+    init: tuple[torch.Tensor, ...],
+    xs: torch.Tensor,
+    unroll: int = 1,
+) -> tuple[tuple[torch.Tensor, ...], torch.Tensor]:
+    """ 
+    Same logic that generic scan but return states.
+    Only used for visualization purpose and should not be used with grad mode
+    """
+    num_chunk = math.ceil(xs.shape[1] / unroll)
+    out_ys = torch.empty_like(xs)
+    carry_out = torch.stack([torch.concat((x.unsqueeze(1).expand((xs.shape[0], 1, -1)), torch.empty_like(xs)), dim=1) for x in init], dim=0)
+    def unrolled_body_(local_carry_out: tuple[torch.Tensor, ...], xs: torch.Tensor, local_out_ys: torch.Tensor):
+        local_carry = local_carry_out[:, :, 0].unbind(0)
+        for i, x in enumerate(xs.unbind(1)):
+            local_carry, y = f(local_carry, x)
+            local_carry_out[:, :, i+1] = torch.stack(local_carry, 0)
+            local_out_ys[:, i] = y
+            
+    @partial(torch.compiler.disable, recursive = False)
+    def do_uncompiled_loop():
+        for i in range(num_chunk):
+            unrolled_body_(carry_out[:, :, i*unroll:, :][:, :, :unroll + 1, :], xs[:, i * unroll:][:, :unroll], out_ys[:, i * unroll:][:, :unroll])
+    do_uncompiled_loop()
+    return carry_out, out_ys
