@@ -11,9 +11,9 @@ from models.alif import EFAdLIF, SEAdLIF
 from models.li import LI
 from models.lif import LIF
 from models.rnn import LSTMCellWrapper
-torch.set_float32_matmul_precision('high')
 torch.autograd.set_detect_anomaly(True)
 torch._dynamo.config.cache_size_limit = 64
+torch.set_float32_matmul_precision('high')
 layer_map = {
     "lif": LIF,
     "se_adlif": SEAdLIF,
@@ -29,7 +29,6 @@ class Encoder(torch.nn.Module):
         self.l2_spike = torch.empty(size=())
         self.dropout = cfg.dropout
 
-    @torch.jit.ignore
     def apply_parameter_constraints(self):
         self.l1.apply_parameter_constraints()
         self.l2.apply_parameter_constraints()
@@ -41,94 +40,45 @@ class Encoder(torch.nn.Module):
         self.l2_spike = out
 
         return out
-    @torch.jit.ignore
+    @torch.no_grad()
     def forward_with_states(self, inputs):
-        states = []
-        s1 = self.l1.initial_state(inputs.shape[0], inputs.device)
-        s1_list = []
-        s2 = self.l2.initial_state(inputs.shape[0], inputs.device)
-        s2_list = []
-        out_sequence = []
-        for t, x_t in enumerate(inputs.unbind(1)):
-            out, s1 = self.l1.forward_cell(x_t, s1)
-            s1_list.append(s1)
-            out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
-            out, s2 = self.l2.forward_cell(out, s2)
-            out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
-            s2_list.append(s2)
-            out_sequence.append(out)
-        s1_list = torch.stack([torch.stack(x, dim=-2) for x in zip(*s1_list)], dim=0)
-        states.append(s1_list)
-        s2_list = torch.stack([torch.stack(x, dim=-2) for x in zip(*s2_list)], dim=0)
-        states.append(s2_list)
-        out = torch.stack(out_sequence, dim=1)
-        return out, states
+        l1_states, out = self.l1.forward_with_states(inputs)
+        l2_states, out = self.l2.forward_with_states(out)
+        return [l1_states, l2_states], out
+
 class Decoder(torch.nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.light_decoder = cfg.light_decoder
-        if self.light_decoder:
-            self.forward = self.forward_light
-            self.forward_with_states = self.forward_light_with_states
-        else:
-            self.l1 = layer_map[cfg.l1.cell](cfg.l1)
-            self.forward = self.forward_full
-            self.forward_with_states = self.forward_full_with_states
+        self.l1 = layer_map[cfg.l1.cell](cfg.l1)
+
         self.l1_spike = torch.empty(size=())
         self.aux_out = torch.empty(size=())
         self.out_layer = LI(cfg.l_out)
         self.dropout = cfg.dropout
-    @torch.jit.ignore
+
     def apply_parameter_constraints(self):
         if not self.light_decoder:
             self.l1.apply_parameter_constraints()
         self.out_layer.apply_parameter_constraints()
     
-    def forward_light(self, inputs: torch.Tensor) -> torch.Tensor:
-        return self.out_layer(inputs)
-        
-    def forward_full(self, inputs):
-        out = self.l1(inputs)
-        self.l1_spike = out
+    def forward(self, inputs):
+        out = inputs
+        if not self.light_decoder:
+            out = self.l1(out)
+            self.l1_spike = out
         out = self.out_layer(out)
         return out
-    
-    @torch.jit.ignore
-    def forward_light_with_states(self, inputs: torch.Tensor) -> tuple[torch.Tensor, tuple[torch.Tensor,]]:
+    def forward_with_states(self, inputs):
+        out = inputs
         states = []
-        s_out = self.out_layer.initial_state(inputs.shape[0], inputs.device)
-        s_out_list = [s_out,]
-        out_sequence = []
-        for t, x_t in enumerate(inputs.unbind(1)):
-            out, s_out = self.out_layer.forward_cell(x_t, s_out)
-            s_out_list.append(s_out)
-            out_sequence.append(out)
-        s_out_list = torch.stack([torch.stack(x, dim=-2) for x in zip(*s_out_list)], dim=0)
-        states.append(s_out_list)
-        out = torch.stack(out_sequence, dim=1)
-        return out, states
-    @torch.jit.ignore
-    def forward_full_with_states(self, inputs):
-        states = []
-        s1 = self.l1.initial_state(inputs.shape[0], inputs.device)
-        s1_list = []
-        s_out = self.out_layer.initial_state(inputs.shape[0], inputs.device)
-        s_out_list = [s_out,]
-        out_sequence = []
-        for t, x_t in enumerate(inputs.unbind(1)):
-            out, s1 = self.l1.forward_cell(x_t, s1)
-            s1_list.append(s1)
-            out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
-            out, s_out = self.out_layer.forward_cell(out, s_out)
-            s_out_list.append(s_out)
-            out_sequence.append(out)
-        s1_list = torch.stack([torch.stack(x, dim=-2) for x in zip(*s1_list)], dim=0)
-        states.append(s1_list)
-        s_out_list = torch.stack([torch.stack(x, dim=-2) for x in zip(*s_out_list)], dim=0)
-        states.append(s_out_list)
-        out = torch.stack(out_sequence, dim=1)
-        return out, states
-    
+        if not self.light_decoder:
+            l1_states, out = self.l1.forward_with_states(out)
+            self.l1_spike = out
+            states.append(l1_states)
+        out_states, out = self.out_layer.forward_with_states(out)
+        states.append(out_states)
+        return states, out
 class Net(torch.nn.Module): 
     def __init__(self, cfg):
         super().__init__()
@@ -139,17 +89,16 @@ class Net(torch.nn.Module):
         out = self.encoder(inputs)
         out = self.decoder(out)
         return out
-    @torch.jit.ignore
+    
     def apply_parameter_constraints(self):
         self.encoder.apply_parameter_constraints()
         self.decoder.apply_parameter_constraints()
         
-    @torch.jit.ignore
     def forward_with_states(self, inputs: torch.Tensor):
-        out, enc_states = self.encoder.forward_with_states(inputs)
-        out, dec_states = self.decoder.forward_with_states(out)
+        enc_states, out = self.encoder.forward_with_states(inputs)
+        dec_states, out = self.decoder.forward_with_states(out)
         enc_states.extend(dec_states)
-        return out, enc_states
+        return enc_states, out
         
          
 
@@ -173,7 +122,6 @@ class MLPSNN(pl.LightningModule):
         self.num_fast_epoch = cfg.get('num_fast_epoch', 0)
         self.fast_epoch_lr_factor = cfg.get('fast_epoch_lr_factor', 0)
 
-        self.output_size = cfg.dataset.num_classes
         self.batch_size = cfg.dataset.batch_size
         self.model = Net(cfg) #, fullgraph=True, dynamic=False)#, example_inputs=[torch.zeros([256, 1024, 1], dtype=torch.float),])
         self.model = torch.compile(self.model, dynamic=True)
@@ -196,11 +144,11 @@ class MLPSNN(pl.LightningModule):
     def forward(self, inputs: torch.Tensor):
         out = self.model(inputs)
         return out
-    # 
-    def forward_with_states(self, inputs: torch.Tensor) -> tuple[torch.Tensor, list[torch.Tensor]]:
-        out, states = self.model.forward_with_states(inputs)
-        self.states = [s[:, :, self.prediction_delay:] for s in states]
-        return out
+    @torch.no_grad()
+    def forward_with_states(self, inputs: torch.Tensor) -> tuple[list[torch.Tensor], torch.Tensor]:
+        states, out = self.model.forward_with_states(inputs)
+        states = [s[:, :, self.prediction_delay:] for s in states]
+        return states, out
 
     def on_train_batch_end(self, outputs, batch, batch_idx: int):
         self.model.apply_parameter_constraints()
@@ -327,7 +275,7 @@ class MLPSNN(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         inputs, targets, block_idx = batch
-        outputs = self.forward_with_states(inputs)
+        states, outputs = self.forward_with_states(inputs)
         (
             outputs_reduce,
             loss,
@@ -348,7 +296,7 @@ class MLPSNN(pl.LightningModule):
             tmp_block_idx[:, :self.skip_first_n, :] = 0
             # determine a random example to visualized
             spike_probabilities = get_per_layer_spike_probs(
-                self.states,
+                states,
                 tmp_block_idx,
             )
             rnd_batch_idx = torch.randint(0, inputs.shape[0], size=()).item()
@@ -366,7 +314,7 @@ class MLPSNN(pl.LightningModule):
                         logger=self.logger,
                         epoch_step=self.current_epoch,
                         inputs=prev_layer_input,
-                        states=self.states[layer][:, rnd_batch_idx],
+                        states=states[layer][:, rnd_batch_idx],
                         targets=targets[rnd_batch_idx],
                         layer_idx=layer,
                         block_idx=block_idx[rnd_batch_idx],
@@ -377,13 +325,13 @@ class MLPSNN(pl.LightningModule):
                         auto_regression=True
                     )
                     if layer < len(layers) - 1:
-                        prev_layer_input = self.states[layer][1, rnd_batch_idx]
+                        prev_layer_input = states[layer][1, rnd_batch_idx]
 
         return loss
 
     def test_step(self, batch, batch_idx):
         inputs, targets, block_idx = batch
-        outputs = self.forward_with_states(inputs)
+        outputs = self.forward(inputs)
 
         (
             outputs_reduce,

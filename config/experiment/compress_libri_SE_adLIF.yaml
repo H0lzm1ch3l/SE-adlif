@@ -13,16 +13,16 @@ encoder:
     input_size: 1
     n_neurons: 600
     use_recurrent: False
-    thr: 0.1
+    thr: 1.0
     # gain for feedforward weight initialization
     ff_gain: 10
     # Range of tau_u
     tau_u_range: [5, 25]
     # Range of tau_w
     tau_w_range: [60, 300]
-    a_range: [0, 1]
-    b_range: [0, 2]
-    q: 120
+    a_range: [0, 10]
+    b_range: [0, 20]
+    q: 12
     unroll: ${unroll_factor}
   l2:
     cell: se_adlif
@@ -36,9 +36,9 @@ encoder:
     tau_u_range: [5, 25]
     # Range of tau_w
     tau_w_range: [60, 300]
-    a_range: [0, 1]
-    b_range: [0, 2]
-    q: 120
+    a_range: [0, 10]
+    b_range: [0, 20]
+    q: 12
     unroll: ${unroll_factor}
 decoder:
   dropout: 0.0
@@ -55,19 +55,18 @@ decoder:
     tau_u_range: [5, 25]
     # Range of tau_w
     tau_w_range: [60, 300]
-    a_range: [0, 1]
-    b_range: [0, 2]
-    q: 120
+    a_range: [0, 10]
+    b_range: [0, 20]
+    q: 12
     unroll: ${unroll_factor}
   l_out:
     input_size: 16
-    n_neurons: 1
-    reduce: 'none' # perform reduce operation on the n_neurons dim (none, mean, sum)
+    n_neurons: 100
+    reduce: 'mean' # perform reduce operation on the n_neurons dim (none, mean, sum)
     # Time constant of output layer 
-
     train_tau_u_method: 'interpolation'
-    tau_u_range: [5, 25]
-
+    tau_u_range: [10, 60]
+    unroll: ${unroll_factor}
 # Parameters of SLAYER
 alpha: 5.0
 c: 0.4
