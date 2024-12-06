@@ -7,12 +7,12 @@ from torch.nn import Module
 from torch import Tensor
 from torch.nn.parameter import Parameter
 
-from models.helpers import get_event_indices, save_distributions_to_aim, save_fig_to_aim, generic_scan
+from models.helpers import get_event_indices, save_distributions_to_aim, save_fig_to_aim
+from models.helpers import generic_scan
 from module.tau_trainers import TauTrainer, get_tau_trainer_class
 import matplotlib.pyplot as plt
 import numpy as np
 from omegaconf import DictConfig
-from functools import partial
 reduce_map = {
     'none': lambda x: x,
     'mean': lambda x: torch.mean(x, dim=-1, keepdim=True),
@@ -60,8 +60,9 @@ class LI(Module):
             return (u,), u 
         def wrapped_scan(u0: Parameter, x: Tensor,
                          alpha: Parameter):
-            _step_fn = partial(step_fn, alpha)
-            return generic_scan(_step_fn, (u0, ), x, self.unroll)
+            def wrapped_step(u0, x):
+                return step_fn(alpha, u0, alpha)
+            return generic_scan(wrapped_step, (u0, ), x, self.unroll)
         self.wrapped_scan = torch.compile(wrapped_scan)
         self.reset_parameters()
         
@@ -89,7 +90,8 @@ class LI(Module):
             device=device, 
             dtype=torch.float, 
             layout=None, 
-            pin_memory=None
+            pin_memory=None,
+            requires_grad=True
         )
         return (u,)
     def forward(self, inputs):

@@ -1,5 +1,4 @@
 from functools import partial
-import types
 from typing import Callable
 import torch
 import numpy as np
