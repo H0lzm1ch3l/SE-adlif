@@ -11,6 +11,7 @@ from models.helpers import get_event_indices, save_distributions_to_aim, save_fi
 from module.tau_trainers import TauTrainer, get_tau_trainer_class
 from omegaconf import DictConfig
 import matplotlib.pyplot as plt
+
 class EFAdLIF(Module):
     __constants__ = ["in_features", "out_features"]
     in_features: int

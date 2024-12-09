@@ -124,7 +124,8 @@ class MLPSNN(pl.LightningModule):
 
         self.batch_size = cfg.dataset.batch_size
         self.model = Net(cfg) #, fullgraph=True, dynamic=False)#, example_inputs=[torch.zeros([256, 1024, 1], dtype=torch.float),])
-        self.model = torch.compile(self.model, dynamic=True)
+        if cfg.get('compile', False):
+            self.model = torch.compile(self.model, dynamic=True)
         self.output_func = cfg.get('loss_agg', 'softmax')
         self.init_metrics_and_loss()
         self.save_hyperparameters()
@@ -360,6 +361,9 @@ class MLPSNN(pl.LightningModule):
         self.val_metric = metrics.clone(prefix="val_")
         self.test_metric = metrics.clone(prefix="test_")
 
+    # def on_before_optimizer_step(self, optimizer) -> None:
+    #     # log weights gradient norm
+    #     self.log_dict(grad_norm(self, norm_type=2))
 
     def configure_optimizers(self):
         opt_1 = torch.optim.Adam(params=self.parameters(), lr=self.lr*self.fast_epoch_lr_factor)
