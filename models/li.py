@@ -7,12 +7,12 @@ from torch.nn import Module
 from torch import Tensor
 from torch.nn.parameter import Parameter
 
-from models.helpers import get_event_indices, save_distributions_to_aim, save_fig_to_aim, generic_scan
+from models.helpers import get_event_indices, save_distributions_to_aim, save_fig_to_aim
+from models.helpers import generic_scan, generic_scan_with_states
 from module.tau_trainers import TauTrainer, get_tau_trainer_class
 import matplotlib.pyplot as plt
 import numpy as np
 from omegaconf import DictConfig
-from functools import partial
 reduce_map = {
     'none': lambda x: x,
     'mean': lambda x: torch.mean(x, dim=-1, keepdim=True),
@@ -56,19 +56,21 @@ class LI(Module):
         self.reduce_fn = reduce_map[self.reduce_type]
         def step_fn(alpha, carry, x):
             u, = carry
-            u = alpha * u + (1 - alpha)*x
+            u = alpha * u + (1.0 - alpha)*x
             return (u,), u 
-        def wrapped_scan(u0: Parameter, x: Tensor,
-                         alpha: Parameter):
-            _step_fn = partial(step_fn, alpha)
-            return generic_scan(_step_fn, (u0, ), x, self.unroll)
-        if cfg.get("compile", False):
-            self.wrapped_scan = torch.compile(wrapped_scan)
-        else:
-            self.wrapped_scan = wrapped_scan
+        def wrapped_scan(u0: Parameter, x: Tensor, alpha: Parameter):
+            def wrapped_step(u0, x):
+                return step_fn(alpha, u0, x)
+            return generic_scan(wrapped_step, (u0, ), x, self.unroll)
+        
+        def wrapped_scan_with_states(u0: Parameter, x: Tensor, alpha: Parameter):
+            def wrapped_step(u0, x):
+                return step_fn(alpha, u0, x)
+            return generic_scan_with_states(wrapped_step, (u0,), x, self.unroll)
+        self.wrapped_scan = torch.compile(wrapped_scan)
+        self.wrapped_scan_with_states = wrapped_scan_with_states
         self.reset_parameters()
         
-    @torch.compiler.disable
     def reset_parameters(self):
         self.tau_u_trainer.reset_parameters()
         torch.nn.init.uniform_(
@@ -92,7 +94,8 @@ class LI(Module):
             device=device, 
             dtype=torch.float, 
             layout=None, 
-            pin_memory=None
+            pin_memory=None,
+            requires_grad=True
         )
         return (u,)
     def forward(self, inputs):
@@ -100,16 +103,15 @@ class LI(Module):
         u, = self.initial_state(inputs.shape[0], device=inputs.device)
         decay_u = self.tau_u_trainer.get_decay()
         return self.reduce_fn(self.wrapped_scan(u, current, decay_u))
-    
-    @torch.compiler.disable
-    def forward_cell(self, input_tensor: Tensor, states: Tensor) -> Tuple[Tensor, Tensor]:
-        u_tm1, = states
+
+    @torch.no_grad()
+    def forward_with_states(self, inputs) -> Tuple[Tensor, Tensor]:
+        current = F.linear(inputs, self.weight, self.bias)
+        u, = self.initial_state(inputs.shape[0], device=inputs.device)
         decay_u = self.tau_u_trainer.get_decay()
-        current = F.linear(input_tensor, self.weight, self.bias)
-        u_t = decay_u * u_tm1 + (1.0 - decay_u) * current
-        return self.reduce_fn(u_t), (u_t,)
+        states, out = self.wrapped_scan_with_states(u, current, decay_u)
+        return states, self.reduce_fn(out)
     
-    @torch.compiler.disable
     def apply_parameter_constraints(self):
         self.tau_u_trainer.apply_parameter_constraints()
         
@@ -124,7 +126,6 @@ class LI(Module):
         targets = targets.cpu().detach().numpy()
         
         block_idx = block_idx.cpu().detach().numpy()
-        targets_in_time = targets[1:]
         if auto_regression:
             targets_in_time = targets[1:]
         else:

@@ -74,7 +74,7 @@ def get_spike_prob(z, block_idx):
     # the temporal dimension correspond to result of the scatter operation
     # for the padded timesteps (spike_proba_per_block[:, 0]) and non-padded timesteps
     # (spike_proba_per_block[:, 1]) only the former is of interest to us for the regularization loss
-     
+    z = z[:, 1:]
     spike_proba_per_block = torch.zeros(
         size=(z.shape[0], 2, z.shape[2]), device=z.device
     )

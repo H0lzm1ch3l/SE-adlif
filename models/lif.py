@@ -2,7 +2,7 @@
 from typing import Optional, Sequence
 
 import torch._dynamo.guards
-from models.helpers import SLAYER, get_event_indices, save_distributions_to_aim, save_fig_to_aim
+from models.helpers import generic_scan, generic_scan_with_states, get_event_indices, save_distributions_to_aim, save_fig_to_aim, spike_grad_injection_function
 import torch
 import torch.nn.functional as F
 from torch.nn import Module
@@ -32,7 +32,7 @@ class LIF(Module):
         self.dt = cfg.get('dt', 1.0)
         self.tau_u_range = cfg.tau_u_range
         self.train_tau_u_method = cfg.get('train_tau_u_method', 'interpolation')
-        
+        self.unroll = cfg.get('unroll', 10)
         self.use_recurrent = cfg.get('use_recurrent', True)
         self.ff_gain = cfg.get('ff_gain', 1.0)
         thr = cfg.get('thr', 1.0)
@@ -63,6 +63,38 @@ class LIF(Module):
             **factory_kwargs,
         )
         self.reset_parameters()
+        def step_fn(recurrent, alpha, thr, carry, cur):
+            u_tm1, z_tm1 = carry
+            if self.use_recurrent:
+                cur_rec = F.linear(z_tm1, recurrent, None)
+                cur = cur + cur_rec
+            
+            u = alpha * u_tm1 + (1.0 - alpha) * (
+                cur 
+            )
+            u_thr = u - thr
+            z = spike_grad_injection_function(u_thr, self.alpha, self.c)
+            u = u * (1 - z.detach())
+            return (u, z), z
+        
+        def wrapped_scan(u0: Parameter,
+                         z0: Tensor, x: Tensor,
+                         recurrent: Parameter, alpha: Parameter,
+                         thr: Tensor):
+            def wrapped_step(carry, cur):
+                return step_fn(recurrent, alpha, thr, carry, cur)
+
+            return generic_scan(wrapped_step, (u0, z0), x, self.unroll)
+        def wrapped_scan_with_states(u0: Parameter,
+                         z0: Tensor, x: Tensor,
+                         recurrent: Parameter, alpha: Parameter,
+                         thr: Tensor):
+            def wrapped_step(carry, cur):
+                return step_fn(recurrent, alpha, thr, carry, cur)
+
+            return generic_scan_with_states(wrapped_step, (u0, z0), x, self.unroll)
+        self.wrapped_scan = torch.compile(wrapped_scan)
+        self.wrapped_scan_with_states = torch.compile(wrapped_scan_with_states)
 
     def reset_parameters(self):
         self.tau_u_trainer.reset_parameters()
@@ -99,41 +131,20 @@ class LIF(Module):
         return u, z
     
     def forward(self, inputs: torch.Tensor) -> Tensor:
-        currents = F.linear(inputs, self.weight, self.bias)
+        current = F.linear(inputs, self.weight, self.bias)
         decay_u = self.tau_u_trainer.get_decay()
         u, z = self.initial_state(inputs.shape[0], inputs.device)
-        out_buffer = torch.zeros(inputs.size(0), inputs.size(1), self.out_features, device=inputs.device)
-        for i, cur in enumerate(currents.unbind(1)):
-            
-            if self.use_recurrent:
-                rec_current = F.linear(z, self.recurrent, None)
-                cur = cur + rec_current
-            u = u * (1 - z.detach())
-            u = decay_u * u + (1.0 - decay_u) * (cur)
-            u_thr = u - self.thr
-            # Forward Gradient Injection trick (credits to Sebastian Otte)
-            z = torch.heaviside(u_thr, torch.as_tensor(0.0).type(u_thr.dtype)).detach() + (u_thr - u_thr.detach()) * SLAYER(u_thr, self.alpha, self.c).detach()
-            
-            out_buffer[:, i] = z
+        out_buffer = self.wrapped_scan(u, z, current, self.recurrent, decay_u, self.thr)
         return out_buffer
     
-    @torch.jit.ignore
-    def forward_cell(self, input_tensor: Tensor, states: tuple[Tensor, Tensor]) -> tuple[Tensor, Tensor]:
-        u_tm1, z_tm1 = states
+    @torch.no_grad()
+    def forward_with_states(self, inputs: torch.Tensor) -> Tensor:
+        current = F.linear(inputs, self.weight, self.bias)
         decay_u = self.tau_u_trainer.get_decay()
-        soma_current = F.linear(input_tensor, self.weight, self.bias)
-        if self.use_recurrent:
-            soma_rec_current = F.linear(z_tm1, self.recurrent, None)
-            soma_current += soma_rec_current
-
-        u_t = decay_u * u_tm1 + (1.0 - decay_u) * (soma_current)
-        u_thr = u_t - self.thr
-        # Forward Gradient Injection trick (credits to Sebastian Otte)
-        z_t = torch.heaviside(u_thr, torch.as_tensor(0.0).type(u_thr.dtype)).detach() + (u_thr - u_thr.detach()) * SLAYER(u_thr, self.alpha, self.c).detach()
-        u_t = u_t * (1 - z_t.detach())
-        return z_t, (u_t, z_t)
+        u, z = self.initial_state(inputs.shape[0], inputs.device)
+        states, out_buffer = self.wrapped_scan_with_states(u, z, current, self.recurrent, decay_u, self.thr)
+        return states, out_buffer
     
-    @torch.jit.ignore
     def apply_parameter_constraints(self):
         self.tau_u_trainer.apply_parameter_constraints()
         
