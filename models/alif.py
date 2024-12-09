@@ -49,7 +49,8 @@ class EFAdLIF(Module):
         self.ff_gain = cfg.get('ff_gain', 1.0)
         self.a_range =  cfg.get('a_range', [0.0, 1.0])
         self.b_range = cfg.get('b_range',[0.0, 2.0])
-        
+        self.num_out_neuron = cfg.get('num_out_neuron', self.out_features)
+        self.use_u_rest = cfg.get(False, 'use_u_rest')
 
 
         self.q = cfg.q
@@ -87,7 +88,7 @@ class EFAdLIF(Module):
         self.u0 = Parameter(torch.empty(self.out_features, **factory_kwargs))
         self.w0 = Parameter(torch.empty(self.out_features, **factory_kwargs))
         self.reset_parameters()
-        def step_fn(recurrent, alpha, beta, thr, a, b, carry, cur):
+        def step_fn(recurrent, alpha, beta, thr, a, b, u_rest, carry, cur):
             u_tm1, z_tm1, w_tm1 = carry
             if self.use_recurrent:
                 cur_rec = F.linear(z_tm1, recurrent, None)
@@ -98,7 +99,7 @@ class EFAdLIF(Module):
             )
             u_thr = u - thr
             z = spike_grad_injection_function(u_thr, self.alpha, self.c)
-            u = u * (1 - z.detach())
+            u = u * (1 - z.detach()) + u_rest*z.detach()
             w = (
                 beta * w_tm1 + (1.0 - beta) * (a * u_tm1 + b * z_tm1) * self.q
                 )
@@ -107,15 +108,23 @@ class EFAdLIF(Module):
                          x: Tensor,
                          recurrent: Parameter, alpha: Parameter, beta: Parameter, 
                          thr: Tensor, a: Parameter, b: Parameter):
+            if self.use_u_rest:
+                u_rest = u0
+            else:
+                u_rest = torch.zeros_like(u0)
             def wrapped_step(carry, cur):
-                return step_fn(recurrent, alpha, beta, thr, a, b, carry, cur)
+                return step_fn(recurrent, alpha, beta, thr, a, b, u_rest, carry, cur)
 
             return generic_scan(wrapped_step, (u0, z0, w0), x, self.unroll)
         def wrapped_scan_with_states(u0: Parameter, z0: Tensor, w0: Parameter, x: Tensor,
                          recurrent: Parameter, alpha: Parameter, beta: Parameter, 
                          thr: Tensor, a: Parameter, b: Parameter):
+            if self.use_u_rest:
+                u_rest = u0
+            else:
+                u_rest = torch.zeros_like(u0)
             def wrapped_step(carry, cur):
-                return step_fn(recurrent, alpha, beta, thr, a, b, carry, cur)
+                return step_fn(recurrent, alpha, beta, thr, a, b, u_rest, carry, cur)
 
             return generic_scan_with_states(wrapped_step, (u0, z0, w0), x, self.unroll)
         self.wrapped_scan = torch.compile(wrapped_scan)
@@ -186,7 +195,7 @@ class EFAdLIF(Module):
         decay_w = self.tau_w_trainer.get_decay()
         u, z, w = self.initial_state(int(inputs.shape[0]), inputs.device)
         out_buffer = self.wrapped_scan(u, z, w, current, self.recurrent, decay_u, decay_w, self.thr, self.a, self.b)
-        return out_buffer
+        return out_buffer[:, :, :self.num_out_neuron]
 
     @torch.no_grad()
     def forward_with_states(self, inputs) -> Tuple[Tensor, Tensor]:
@@ -195,7 +204,7 @@ class EFAdLIF(Module):
         decay_w = self.tau_w_trainer.get_decay()
         u, z, w = self.initial_state(int(inputs.shape[0]), inputs.device)
         states, out = self.wrapped_scan_with_states(u, z, w, current, self.recurrent, decay_u, decay_w, self.thr, self.a, self.b)
-        return states, out
+        return states[..., :self.num_out_neuron], out[..., :self.num_out_neuron]
     
     @torch.compiler.disable
     @staticmethod
@@ -269,7 +278,7 @@ class SEAdLIF(EFAdLIF):
     def __init__(self, cfg, device=None, dtype=None, **kwargs):
         super().__init__(cfg, device, dtype, **kwargs)
 
-        def step_fn(recurrent, alpha, beta, thr, a, b, carry, cur):
+        def step_fn(recurrent, alpha, beta, thr, a, b, u_rest, carry, cur):
             u_tm1, z_tm1, w_tm1 = carry
             if self.use_recurrent:
                 cur_rec = F.linear(z_tm1, recurrent, None)
@@ -280,7 +289,7 @@ class SEAdLIF(EFAdLIF):
             )
             u_thr = u - thr
             z = spike_grad_injection_function(u_thr, self.alpha, self.c)
-            u = u * (1 - z.detach())
+            u = u * (1 - z.detach()) + u_rest*z.detach()
             w = (
                 beta * w_tm1 + (1.0 - beta) * (a * u + b * z) * self.q
                 )
@@ -290,19 +299,23 @@ class SEAdLIF(EFAdLIF):
                           x: Tensor,
                          recurrent: Parameter, alpha: Parameter, beta: Parameter, 
                          thr: Tensor, a: Parameter, b: Parameter):
+            if self.use_u_rest:
+                u_rest = u0
+            else:
+                u_rest = torch.zeros_like(u0)
             def wrapped_step(carry, cur):
-                return step_fn(recurrent, alpha, beta, thr, a, b, carry, cur)
-            # _step_fn = partial(step_fn, recurrent, alpha, beta, thr, a, b)
-
+                return step_fn(recurrent, alpha, beta, thr, a, b, u_rest, carry, cur)
             return generic_scan(wrapped_step, (u0, z0, w0), x, self.unroll)
         def wrapped_scan_with_states(u0: Parameter, z0: Tensor, w0: Parameter, 
                           x: Tensor,
                          recurrent: Parameter, alpha: Parameter, beta: Parameter, 
                          thr: Tensor, a: Parameter, b: Parameter):
+            if self.use_u_rest:
+                u_rest = u0
+            else:
+                u_rest = torch.zeros_like(u0)
             def wrapped_step(carry, cur):
-                return step_fn(recurrent, alpha, beta, thr, a, b, carry, cur)
-            # _step_fn = partial(step_fn, recurrent, alpha, beta, thr, a, b)
-
+                return step_fn(recurrent, alpha, beta, thr, a, b, u_rest, carry, cur)
             return generic_scan_with_states(wrapped_step, (u0, z0, w0), x, self.unroll)
         self.wrapped_scan = torch.compile(wrapped_scan)
         self.wrapped_scan_with_states = wrapped_scan_with_states
