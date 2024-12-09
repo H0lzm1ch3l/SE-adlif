@@ -135,15 +135,18 @@ class LI(Module):
             axes[0].eventplot(get_event_indices(inputs.T), color='black', orientation='horizontal')
         else:
             axes[0].plot(inputs)
+        out = states[0]
+        if out.shape[-1] > 1:
+            out = np.mean(out, -1)
         axes[0].set_ylabel("Input")
-        axes[1].plot(states[0])
+        axes[1].plot(out)
         axes[1].set_ylabel("v_t/output")
         if auto_regression:
-            mse = ((states[0] - targets_in_time)**2).mean(-1)
+            mse = ((out - targets_in_time)**2).mean(-1)
             axes[2].plot(mse, color='blue', label='mse')
             x_min, x_max = axes[2].get_xlim()  
-            x_half = (x_min + x_max) / 2  
-            axes[2].axvline(x=x_half, color='red', linestyle='--', linewidth=2, label='Auto-regression start')
+            # x_half = (x_min + x_max) / 2  
+            # axes[2].axvline(x=x_half, color='red', linestyle='--', linewidth=2, label='Auto-regression start')
             axes[2].set_ylabel("MSE")
         else:
             pred = np.argmax(states[0], -1)
