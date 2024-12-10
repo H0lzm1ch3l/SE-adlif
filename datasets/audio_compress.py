@@ -53,7 +53,7 @@ def copy_wave_files_with_path_names(root_path, destination_path):
         # Copy the file to the new location
         shutil.copy2(wav_file, destination_file)
 
-def process_resampling(wav_file, output_path, target_sample_rate):
+def process_resampling(wav_file, output_path, target_sample_rate, norm_func):
     # Load the audio file
     waveform, sample_rate = torchaudio.load(wav_file)
     
@@ -61,6 +61,7 @@ def process_resampling(wav_file, output_path, target_sample_rate):
     with torch.no_grad():
         resampler = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=target_sample_rate)
         waveform = resampler(waveform)
+        waveform = norm_func(waveform)
     
     # Define the output file path (same name as the original)
     output_file = output_path / wav_file.name
@@ -68,7 +69,7 @@ def process_resampling(wav_file, output_path, target_sample_rate):
     # Save the resampled audio to the output path
     torchaudio.save(output_file, waveform, target_sample_rate)
 
-def resample_and_save_wav_files(root, base_freq, new_freq):
+def resample_and_save_wav_files(root, base_freq, new_freq, norm_func):
     # Define the input and output paths
     input_path = Path(root) / str(base_freq) / "full"
     output_path = Path(root) / str(new_freq) / "full"
@@ -82,7 +83,7 @@ def resample_and_save_wav_files(root, base_freq, new_freq):
     # Use multiprocessing to speed up the process
     with ThreadPoolExecutor() as executor:
         futures = [
-            executor.submit(process_resampling, wav_file, output_path, new_freq)
+            executor.submit(process_resampling, wav_file, output_path, new_freq, norm_func)
             for wav_file in wav_files
         ]
         # Wait for all futures to complete
@@ -124,6 +125,12 @@ def get_chunk_by_id(chunk_id, chunk_map, chunk_size):
     chunk = waveform[:, start_sample:end_sample]
     
     return chunk
+norm_map = {
+    'none': lambda x: x,
+    '-1_1':lambda x: -1 + 2*(x - torch.min(x))/(torch.max(x) - torch.min(x)),
+    '0_1': lambda x: (x - torch.min(x))/(torch.max(x) - torch.min(x)),
+    'standard': lambda x: (x - torch.mean(x))/(torch.var(x) + 1e-9) 
+}
 class LibriTTS(Dataset):
     def __init__(
         self,
@@ -132,6 +139,7 @@ class LibriTTS(Dataset):
         sampling_freq: int = 24_000,
         sample_length: int = -1,
         prediction_delay: int = 0,
+        normalization: str = 'none',
         train: bool = True,
         debug: bool = True,
         transform = None,
@@ -154,13 +162,15 @@ class LibriTTS(Dataset):
         self.target_transform = target_transform
         self.get_metadata = get_metadata
         self.prediction_delay = prediction_delay
+        self.norm_type = normalization
+        self.norm_func = norm_map[normalization]
         root_dir = Path(save_to)
         split = "debug"
         if not debug:
             split = "train" if train else "test"
         full_split = split + "/24000/full"
         freq_split = split + f"/{sampling_freq}/full"
-        if (root_dir / full_split).exists() and (root_dir / full_split).is_dir():
+        if (root_dir / full_split).exists() and any((root_dir / full_split).iterdir()):
             print('directory already exist')
         else:
             # for now only get debug
@@ -169,10 +179,10 @@ class LibriTTS(Dataset):
             else:
                 raise NotImplementedError('Only debug is implemented for now')
         # 24_000/full split exist 
-        if sampling_freq != 24_000 and (not (root_dir/ freq_split).exists() or not (root_dir/freq_split).is_dir()):
+        if sampling_freq != 24_000 and (not (root_dir/ freq_split).exists() or not any((root_dir / full_split).iterdir())):
             # resample
             print(f'Resample wave file from 24kHz to {sampling_freq}Hz')
-            resample_and_save_wav_files(root_dir / split, 24_000, sampling_freq)
+            resample_and_save_wav_files(root_dir / split, 24_000, sampling_freq, self.norm_func)
         print(f"Wave files are resampled to {sampling_freq}Hz")
         self.wave_files_path = list((root_dir / freq_split).rglob("*.wav"))
         # associate a chunk idx with a file_path and starting sample idx
@@ -225,6 +235,7 @@ class CompressLibri(pl.LightningDataModule):
                  batch_size: int = 32,
                  num_workers: int = 1,
                  fits_into_ram: bool = False,
+                 normalization: str = 'none',
                  name: str = None, # for hydra
                  required_model_size: str=None, # for hydra
                  num_classes: int = 0,
@@ -234,6 +245,7 @@ class CompressLibri(pl.LightningDataModule):
         self.num_workers = num_workers
         self.fits_into_ram = fits_into_ram
         self.collate_fn = PadTensors(require_padding=False)
+        self.normalization = normalization
         if not os.path.isabs(data_path):
             cwd = hydra.utils.get_original_cwd()
             data_path = os.path.abspath(os.path.join(cwd, data_path))
@@ -244,6 +256,7 @@ class CompressLibri(pl.LightningDataModule):
             sampling_freq=sampling_freq,
             sample_length=sample_length,
             prediction_delay=prediction_delay,
+            normalization=normalization,
             debug=True,
             transform=None,
             target_transform=None,
