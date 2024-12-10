@@ -126,6 +126,9 @@ class MLPSNN(pl.LightningModule):
         self.model = Net(cfg) #, fullgraph=True, dynamic=False)#, example_inputs=[torch.zeros([256, 1024, 1], dtype=torch.float),])
         if cfg.get('compile', False):
             self.model = torch.compile(self.model, dynamic=True)
+        else:
+            # leaf are still compiled one must explicitly disable the compiler
+            self.model = torch.compiler.disable(self.model)
         self.output_func = cfg.get('loss_agg', 'softmax')
         self.init_metrics_and_loss()
         self.save_hyperparameters()
@@ -255,7 +258,7 @@ class MLPSNN(pl.LightningModule):
             sum_spikes.extend([self.model.decoder.l1_spike,])
         # remove ignored spike then take the neuron-wise spike proba 
         sum_spikes = [x[:, self.skip_first_n:].mean(0).mean(0) for x in sum_spikes]
-        reg_upper, log_upper = snn_regularization(sum_spikes, self.max_spike_prob, torch.tensor(self.max_layer_coeff, device=inputs.device), 'upper', reduce_layer='sum')
+        reg_upper, log_upper = snn_regularization(sum_spikes, self.max_spike_prob, torch.tensor(self.max_layer_coeff, device=inputs.device), 'upper', reduce_layer='sum', reduce_neuron="sum")
         reg_lower, log_lower = snn_regularization(sum_spikes, self.min_spike_prob, torch.tensor(self.min_layer_coeff, device=inputs.device), 'lower', reduce_layer='sum')
         log_upper.update(log_lower)
         reg_loss = reg_upper + reg_lower
