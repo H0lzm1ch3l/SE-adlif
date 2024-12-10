@@ -11,7 +11,7 @@ encoder:
     # input size 
     cell: se_adlif
     input_size: 1
-    n_neurons: 200
+    n_neurons: 600
     use_recurrent: False
     thr: 1.0
     # gain for feedforward weight initialization
@@ -27,8 +27,8 @@ encoder:
     unroll: ${unroll_factor}
   l2:
     cell: se_adlif
-    input_size: 200
-    n_neurons: 200
+    input_size: 600
+    n_neurons: 300
     use_recurrent: True
     thr: 1.0
     # gain for feedforward weight initialization
@@ -65,7 +65,7 @@ decoder:
     unroll: ${unroll_factor}
   l_out:
     input_size: 200
-    n_neurons: 20
+    n_neurons: 100
     reduce: 'mean' # perform reduce operation on the n_neurons dim (none, mean, sum)
     # Time constant of output layer 
     train_tau_u_method: 'interpolation'
@@ -105,7 +105,7 @@ max_window: 9 # max size of the FTT windows in power of two
 
 # regularization parameters
 min_spike_prob: [0.1, 0.005, 0.05] # , 0.1]
-max_spike_prob: [0.2, 0.01, 0.1] #, 0.2]
+max_spike_prob: [0.2, 0.01, 0.2] #, 0.2]
 min_layer_coeff: [10.0, 1.0, 10.0] #, 10.0] # encourage the first layer to spike
 max_layer_coeff: [0, 1000, 100] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
 compile: True
