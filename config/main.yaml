@@ -8,6 +8,7 @@ random_seed: 42
 logdir: ./results
 
 datadir: ./data
+cachedir: ./data/cache
 
 device: cuda:0
 
