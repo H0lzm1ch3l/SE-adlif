@@ -20,6 +20,7 @@ import shutil
 import torchaudio
 import pickle
 from tqdm import tqdm
+import hashlib
 def save_chunk_map(chunk_map, filepath):
     """Saves the chunk map to a pickle file."""
     with open(filepath, 'wb') as f:
@@ -53,7 +54,7 @@ def copy_wave_files_with_path_names(root_path, destination_path):
         # Copy the file to the new location
         shutil.copy2(wav_file, destination_file)
 
-def process_resampling(wav_file, output_path, target_sample_rate, norm_func):
+def process_resampling(wav_file, output_path, target_sample_rate):
     # Load the audio file
     waveform, sample_rate = torchaudio.load(wav_file)
     
@@ -61,7 +62,6 @@ def process_resampling(wav_file, output_path, target_sample_rate, norm_func):
     with torch.no_grad():
         resampler = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=target_sample_rate)
         waveform = resampler(waveform)
-        waveform = norm_func(waveform)
     
     # Define the output file path (same name as the original)
     output_file = output_path / wav_file.name
@@ -69,7 +69,7 @@ def process_resampling(wav_file, output_path, target_sample_rate, norm_func):
     # Save the resampled audio to the output path
     torchaudio.save(output_file, waveform, target_sample_rate)
 
-def resample_and_save_wav_files(root, base_freq, new_freq, norm_func):
+def resample_and_save_wav_files(root, base_freq, new_freq):
     # Define the input and output paths
     input_path = Path(root) / str(base_freq) / "full"
     output_path = Path(root) / str(new_freq) / "full"
@@ -83,7 +83,7 @@ def resample_and_save_wav_files(root, base_freq, new_freq, norm_func):
     # Use multiprocessing to speed up the process
     with ThreadPoolExecutor() as executor:
         futures = [
-            executor.submit(process_resampling, wav_file, output_path, new_freq, norm_func)
+            executor.submit(process_resampling, wav_file, output_path, new_freq)
             for wav_file in wav_files
         ]
         # Wait for all futures to complete
@@ -113,11 +113,12 @@ def create_chunk_map(file_paths, chunk_size):
 
     return chunk_map
 
-def get_chunk_by_id(chunk_id, chunk_map, chunk_size):
+def get_chunk_by_id(chunk_id, chunk_map, chunk_size, norm_func):
     
     wav_file, start_sample = chunk_map[chunk_id]
     # Load the waveform for this file
     waveform, sample_rate = torchaudio.load(wav_file)
+    waveform = norm_func(waveform)
     if chunk_size == -1:
         return waveform
     # Extract the chunk
@@ -138,7 +139,6 @@ class LibriTTS(Dataset):
         max_sample: int = -1,
         sampling_freq: int = 24_000,
         sample_length: int = -1,
-        prediction_delay: int = 0,
         normalization: str = 'none',
         train: bool = True,
         debug: bool = True,
@@ -161,7 +161,6 @@ class LibriTTS(Dataset):
         self.transform = transform
         self.target_transform = target_transform
         self.get_metadata = get_metadata
-        self.prediction_delay = prediction_delay
         self.norm_type = normalization
         self.norm_func = norm_map[normalization]
         root_dir = Path(save_to)
@@ -182,7 +181,7 @@ class LibriTTS(Dataset):
         if sampling_freq != 24_000 and (not (root_dir/ freq_split).exists() or not any((root_dir / full_split).iterdir())):
             # resample
             print(f'Resample wave file from 24kHz to {sampling_freq}Hz')
-            resample_and_save_wav_files(root_dir / split, 24_000, sampling_freq, self.norm_func)
+            resample_and_save_wav_files(root_dir / split, 24_000, sampling_freq,)
         print(f"Wave files are resampled to {sampling_freq}Hz")
         self.wave_files_path = list((root_dir / freq_split).rglob("*.wav"))
         # associate a chunk idx with a file_path and starting sample idx
@@ -199,7 +198,7 @@ class LibriTTS(Dataset):
     def __len__(self):
         return self.num_samples if self.max_sample == -1 else min(self.num_samples, self.max_sample)
     def __getitem__(self, index):
-        inputs: torch.Tensor = get_chunk_by_id(index, self.chunk_map, self.sample_length).T
+        inputs: torch.Tensor = get_chunk_by_id(index, self.chunk_map, self.sample_length, self.norm_func).T
         # inputs = (inputs - inputs.min())/(inputs.max() - inputs.min())
         targets = inputs.clone()
         block_idx = torch.ones((inputs.shape[0],), dtype=torch.int32)
@@ -255,13 +254,12 @@ class CompressLibri(pl.LightningDataModule):
             max_sample=max_sample,
             sampling_freq=sampling_freq,
             sample_length=sample_length,
-            prediction_delay=prediction_delay,
             normalization=normalization,
             debug=True,
             transform=None,
             target_transform=None,
         )
-        self.cache_path = data_path+f"/cache/LibriTTS_hz-{sampling_freq}_sl-{sample_length}"
+        self.cache_path = data_path+f"/cache/LibriTTS_hz-{sampling_freq}_sl-{sample_length}_norm-{normalization}"
         def delay_transform(inputs, targets, block_idx):
             # add zero padding to account for possible prediciton delay 
             # idea is that it is potentially complex for the model to predict
