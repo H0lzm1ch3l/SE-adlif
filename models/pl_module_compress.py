@@ -9,6 +9,7 @@ from pytorch_lightning.utilities import grad_norm
 from functional.loss import MultiScaleMelSpetroLoss, get_per_layer_spike_probs, snn_regularization
 from models.alif import EFAdLIF, SEAdLIF
 from models.li import LI
+from models.sli import SLI
 from models.lif import LIF
 from models.rnn import LSTMCellWrapper
 # from models.sli import SLI
@@ -21,7 +22,7 @@ layer_map = {
     "ef_adlif": EFAdLIF,
     'lstm': LSTMCellWrapper,
     'li': LI,
-    # 'sli': SLI
+    'sli': SLI
 }
 class Encoder(torch.nn.Module):
     def __init__(self, cfg):
