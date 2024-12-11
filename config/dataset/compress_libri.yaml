@@ -4,6 +4,7 @@ _target_: datasets.audio_compress.CompressLibri
 name: Compress libri task
 required_model_size: small
 data_path: ${datadir}
+cache_path: ${cachedir}
 max_sample: 10000
 sampling_freq: 16000
 sample_length: 512
