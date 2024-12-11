@@ -64,12 +64,15 @@ decoder:
     use_u_rest: True
     unroll: ${unroll_factor}
   l_out:
+    cell: li
     input_size: 200
     n_neurons: 20
     reduce: 'mean' # perform reduce operation on the n_neurons dim (none, mean, sum)
     # Time constant of output layer 
     train_tau_u_method: 'fixed'
+    train_tau_i_method: 'fixed'
     tau_u_range: [5, 60]
+    tau_i_range: [1, 20]
     unroll: ${unroll_factor}
 # Parameters of SLAYER
 alpha: 5.0
@@ -108,6 +111,6 @@ min_spike_prob: [0.1, 0.005, 0.05] # , 0.1]
 max_spike_prob: [0.2, 0.01, 0.2] #, 0.2]
 min_layer_coeff: [10.0, 1.0, 10.0] #, 10.0] # encourage the first layer to spike
 max_layer_coeff: [0, 1000, 100] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
-compile: True
+compile: False
 
 random_seed: 42

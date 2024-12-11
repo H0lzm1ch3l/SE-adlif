@@ -11,6 +11,7 @@ from models.alif import EFAdLIF, SEAdLIF
 from models.li import LI
 from models.lif import LIF
 from models.rnn import LSTMCellWrapper
+from models.sli import SLI
 torch.autograd.set_detect_anomaly(True)
 torch._dynamo.config.cache_size_limit = 64
 torch.set_float32_matmul_precision('high')
@@ -19,6 +20,8 @@ layer_map = {
     "se_adlif": SEAdLIF,
     "ef_adlif": EFAdLIF,
     'lstm': LSTMCellWrapper,
+    'li': LI,
+    'sli': SLI
 }
 class Encoder(torch.nn.Module):
     def __init__(self, cfg):
@@ -54,7 +57,7 @@ class Decoder(torch.nn.Module):
 
         self.l1_spike = torch.empty(size=())
         self.aux_out = torch.empty(size=())
-        self.out_layer = LI(cfg.l_out)
+        self.out_layer = layer_map[cfg.l_out.cell](cfg.l_out)
         self.dropout = cfg.dropout
 
     def apply_parameter_constraints(self):
@@ -126,9 +129,7 @@ class MLPSNN(pl.LightningModule):
         self.model = Net(cfg) #, fullgraph=True, dynamic=False)#, example_inputs=[torch.zeros([256, 1024, 1], dtype=torch.float),])
         if cfg.get('compile', False):
             self.model = torch.compile(self.model, dynamic=True)
-        else:
-            # leaf are still compiled one must explicitly disable the compiler
-            self.model = torch.compiler.disable(self.model)
+            
         self.output_func = cfg.get('loss_agg', 'softmax')
         self.init_metrics_and_loss()
         self.save_hyperparameters()
@@ -299,8 +300,9 @@ class MLPSNN(pl.LightningModule):
             tmp_block_idx = block_idx.clone()
             tmp_block_idx[:, :self.skip_first_n, :] = 0
             # determine a random example to visualized
+            # remove the last layer states as it is assumed to be non-spiking
             spike_probabilities = get_per_layer_spike_probs(
-                states,
+                states[:-1],
                 tmp_block_idx,
             )
             rnd_batch_idx = torch.randint(0, inputs.shape[0], size=()).item()
