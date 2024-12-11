@@ -11,7 +11,7 @@ from models.alif import EFAdLIF, SEAdLIF
 from models.li import LI
 from models.lif import LIF
 from models.rnn import LSTMCellWrapper
-from models.sli import SLI
+# from models.sli import SLI
 torch.autograd.set_detect_anomaly(True)
 torch._dynamo.config.cache_size_limit = 64
 torch.set_float32_matmul_precision('high')
@@ -21,7 +21,7 @@ layer_map = {
     "ef_adlif": EFAdLIF,
     'lstm': LSTMCellWrapper,
     'li': LI,
-    'sli': SLI
+    # 'sli': SLI
 }
 class Encoder(torch.nn.Module):
     def __init__(self, cfg):

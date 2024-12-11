@@ -3,6 +3,13 @@
 defaults:
   - /dataset: compress_libri
 
+enc_l1_neurons: 600
+enc_l2_neurons: 600
+dec_l1_neurons: 600
+dec_lout_neurons: 20
+bottleneck_neurons: 128
+
+
 exp_name: compres_libri_SE_adLIF
 unroll_factor: 64
 encoder:
@@ -11,7 +18,7 @@ encoder:
     # input size 
     cell: se_adlif
     input_size: 1
-    n_neurons: 600
+    n_neurons: ${enc_l1_neurons}
     use_recurrent: False
     thr: 1.0
     # gain for feedforward weight initialization
@@ -27,8 +34,8 @@ encoder:
     unroll: ${unroll_factor}
   l2:
     cell: se_adlif
-    input_size: 600
-    n_neurons: 600
+    input_size: ${enc_l1_neurons}
+    n_neurons: ${enc_l2_neurons}
     use_recurrent: True
     thr: 1.0
     # gain for feedforward weight initialization
@@ -40,7 +47,7 @@ encoder:
     a_range: [0, 10]
     b_range: [0, 20]
     q: 12
-    num_out_neuron: 128
+    num_out_neuron: ${bottleneck_neurons}
     use_u_rest: True
     unroll: ${unroll_factor}
 decoder:
@@ -48,8 +55,8 @@ decoder:
   light_decoder: False
   l1:
     cell: se_adlif
-    input_size: 16
-    n_neurons: 600
+    input_size: ${bottleneck_neurons}
+    n_neurons: ${dec_l1_neurons}
     use_recurrent: True
     thr: 1.0
     # gain for feedforward weight initialization
@@ -64,8 +71,9 @@ decoder:
     use_u_rest: True
     unroll: ${unroll_factor}
   l_out:
-    input_size: 200
-    n_neurons: 20
+    cell: li
+    input_size: ${dec_l1_neurons}
+    n_neurons: ${dec_lout_neurons}
     reduce: 'mean' # perform reduce operation on the n_neurons dim (none, mean, sum)
     # Time constant of output layer 
     train_tau_u_method: 'fixed'
