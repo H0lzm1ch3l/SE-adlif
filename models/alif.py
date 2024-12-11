@@ -51,8 +51,7 @@ class EFAdLIF(Module):
         self.a_range =  cfg.get('a_range', [0.0, 1.0])
         self.b_range = cfg.get('b_range',[0.0, 2.0])
         self.num_out_neuron = cfg.get('num_out_neuron', self.out_features)
-        self.use_u_rest = cfg.get(False, 'use_u_rest')
-
+        self.use_u_rest = cfg.get('use_u_rest', False)
 
         self.q = cfg.q
         
