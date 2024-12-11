@@ -100,7 +100,18 @@ class Net(torch.nn.Module):
         enc_states.extend(dec_states)
         return enc_states, out
         
-         
+class CompositeLoss(torch.nn.Module):
+    def __init__(self, spectral_loss, spectral_loss_gain, mse_loss, mse_loss_gain):
+        super().__init__()
+        self.spectral_loss = spectral_loss
+        self.mse_loss = mse_loss
+        self.spectral_loss_gain = spectral_loss_gain
+        self.mse_loss_gain = mse_loss_gain
+
+    def forward(self, outputs, targets):
+        spectral_loss = self.spectral_loss(outputs, targets)
+        mse_loss = self.mse_loss(outputs, targets)
+        return self.spectral_loss_gain*spectral_loss + self.mse_loss_gain*mse_loss
 
 class MLPSNN(pl.LightningModule):
     def __init__(
@@ -132,7 +143,9 @@ class MLPSNN(pl.LightningModule):
         self.output_func = cfg.get('loss_agg', 'softmax')
         self.init_metrics_and_loss()
         self.save_hyperparameters()
-        self.loss = MultiScaleMelSpetroLoss(cfg.dataset.sampling_freq, cfg.n_mels, cfg.min_window, cfg.max_window)
+        # self.loss = MultiScaleMelSpetroLoss(cfg.dataset.sampling_freq, cfg.n_mels, cfg.min_window, cfg.max_window)
+        spectral_loss = MultiScaleMelSpetroLoss(cfg.dataset.sampling_freq, cfg.n_mels, cfg.min_window, cfg.max_window)
+        self.loss = CompositeLoss(spectral_loss, cfg.spectral_loss_gain, MSELoss(), cfg.mse_loss_gain)
         # regularization parameters
         self.min_spike_prob = cfg.min_spike_prob
         self.max_spike_prob = cfg.max_spike_prob
@@ -227,6 +240,12 @@ class MLPSNN(pl.LightningModule):
             on_epoch=True,
             on_step=True if prefix == "train_" else False,
         )
+        self.log(
+            f"{prefix}spectral_loss",
+            self.loss.spectral_loss(outputs, targets),
+            prog_bar=True,
+            on_epoch=True,
+            on_step=True if prefix == "train_" else False)
 
     def training_step(self, batch, batch_idx):
         opt_1, opt_2 = self.optimizers()
