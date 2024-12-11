@@ -23,6 +23,8 @@ encoder:
     a_range: [0, 10]
     b_range: [0, 20]
     q: 12
+    train_tau_u_method: 'fixed'
+    train_tau_w_method: 'fixed'
     use_u_rest: True
     unroll: ${unroll_factor}
   l2:
@@ -42,6 +44,8 @@ encoder:
     q: 12
     num_out_neuron: 16
     use_u_rest: True
+    train_tau_u_method: 'fixed'
+    train_tau_w_method: 'fixed'
     unroll: ${unroll_factor}
 decoder:
   dropout: 0.0
@@ -62,9 +66,11 @@ decoder:
     b_range: [0, 20]
     q: 12
     use_u_rest: True
+    train_tau_u_method: 'fixed'
+    train_tau_w_method: 'fixed'
     unroll: ${unroll_factor}
   l_out:
-    cell: li
+    cell: sli
     input_size: 200
     n_neurons: 20
     reduce: 'mean' # perform reduce operation on the n_neurons dim (none, mean, sum)
@@ -72,7 +78,7 @@ decoder:
     train_tau_u_method: 'fixed'
     train_tau_i_method: 'fixed'
     tau_u_range: [5, 60]
-    tau_i_range: [1, 20]
+    tau_i_range: [1, 5]
     unroll: ${unroll_factor}
 # Parameters of SLAYER
 alpha: 5.0
@@ -91,7 +97,7 @@ tracking_mode: min
 # optimizer parameters
 # learning rate of the optimizer
 lr: 0.01
-factor: 0.5
+factor: 0.8
 patience: 5
 
 grad_norm: 5
