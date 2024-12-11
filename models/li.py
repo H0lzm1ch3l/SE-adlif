@@ -118,7 +118,7 @@ class LI(Module):
     @torch.compiler.disable
     @staticmethod
     def plot_states(layer_idx, inputs, states, targets, block_idx, output_size, auto_regression):
-        figure, axes = plt.subplots(nrows=3, ncols=1, sharex="all", figsize=(8, 11))
+        figure, axes = plt.subplots(nrows=4, ncols=1, sharex="all", figsize=(8, 11))
         is_events = torch.all(inputs == inputs.round())
         inputs = inputs.cpu().detach().numpy()
         # remove the first states as it's the initialization states
@@ -135,25 +135,28 @@ class LI(Module):
             axes[0].eventplot(get_event_indices(inputs.T), color='black', orientation='horizontal')
         else:
             axes[0].plot(inputs)
+        axes[0].set_ylabel("Input")
+        
+        axes[1].plot(states[0])
+        axes[1].set_ylabel("u_t")
         out = states[0]
         if out.shape[-1] > 1:
             out = np.mean(out, -1)
-        axes[0].set_ylabel("Input")
-        axes[1].plot(out)
-        axes[1].set_ylabel("v_t/output")
+        axes[2].plot(out)
+        axes[2].set_ylabel("prediction")
         if auto_regression:
             mse = ((out - targets_in_time)**2).mean(-1)
-            axes[2].plot(mse, color='blue', label='mse')
+            axes[3].plot(mse, color='blue', label='mse')
             x_min, x_max = axes[2].get_xlim()  
             # x_half = (x_min + x_max) / 2  
             # axes[2].axvline(x=x_half, color='red', linestyle='--', linewidth=2, label='Auto-regression start')
-            axes[2].set_ylabel("MSE")
+            axes[3].set_ylabel("MSE")
         else:
             pred = np.argmax(states[0], -1)
-            axes[2].plot(pred, color="blue", label="Prediction")
-            axes[2].plot(targets_in_time, color="red", label="Target")
-            axes[2].set_ylabel("Class")
-        axes[2].legend()
+            axes[3].plot(pred, color="blue", label="Prediction")
+            axes[3].plot(targets_in_time, color="red", label="Target")
+            axes[3].set_ylabel("Class")
+        axes[3].legend()
         figure.suptitle(f"Layer {layer_idx}\n")
         plt.tight_layout()
         plt.close(figure)
