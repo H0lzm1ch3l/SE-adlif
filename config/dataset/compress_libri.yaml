@@ -12,7 +12,7 @@ sample_length: 512
 # where L is the SNN model, it prevents that the neuron should respond directly
 # to be fair with a spectral loss it may not really matter if the neuron respond with a temporal shift
 prediction_delay: 5
-zero_input_proba: 0.01
+zero_input_proba: 0.0
 batch_size: 128
 num_workers: 8
 fits_into_ram: True
