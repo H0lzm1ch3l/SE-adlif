@@ -3,11 +3,12 @@ import pytorch_lightning as pl
 import torch
 import torchmetrics
 from torch.nn import CrossEntropyLoss, MSELoss
-from omegaconf import DictConfig
+from omegaconf import DictConfig, open_dict
 from pytorch_lightning.utilities import grad_norm
 
 from functional.loss import MultiScaleMelSpetroLoss, get_per_layer_spike_probs, snn_regularization
 from models.alif import EFAdLIF, SEAdLIF
+from models.helpers import A_law, inverse_A_law
 from models.li import LI
 from models.sli import SLI
 from models.lif import LIF
@@ -103,7 +104,67 @@ class Net(torch.nn.Module):
         dec_states, out = self.decoder.forward_with_states(out)
         enc_states.extend(dec_states)
         return enc_states, out
+class GenerativeSpectralLoss(torch.nn.Module):
+    def __init__(self, num_bins, temp, gen_loss_gain, spectral_loss, spectral_loss_gain, 
+                 discretization: str = 'log', temp_decay: float = 1.0, min_temp: float = 1.0, *args, **kwargs):
+        # discretization consider if num_bins levels are uniformly distributed
+        # on a linear space or first mapped into a log space determined 
+        # by a standard A-law
+        # In theory the log space is more suitable for audio perception
+        super().__init__(*args, **kwargs)
+        self.num_bins = num_bins
+        # the discretization assume [-1, 1] normalization 
+        self.temp = temp
+        self.a = torch.tensor(86.7)
+        self.gen_loss_gain = gen_loss_gain
+        self.spectral_loss = spectral_loss
+        self.spectral_loss_gain = spectral_loss_gain
+        self.discretization = discretization
+        delta = torch.tensor(2.0/(num_bins - 1))
+        bin_edges = torch.tensor([-1.0 + i*2.0/(num_bins - 1) for i in range(num_bins)])
+        self.register_buffer('delta', delta) #uniform bining
+        self.temp_decay = temp_decay
+        self.min_temp = min_temp
+        self.register_buffer('bin_edges', bin_edges)
+        def linear_quantize(x):
+            return torch.round((x + 1.0)/self.delta).long()
+        def log_quantize(x):
+            return linear_quantize(A_law(x, self.a))
+        def linear_dequantize(x):
+            return torch.sum(x * self.bin_edges.view(1, 1, -1), dim=-1, keepdim=True)
+        def log_dequantize(x):
+            y = linear_dequantize(x)
+            return inverse_A_law(y, self.a)
+        self.quantize = linear_quantize if self.discretization == 'linear' else log_quantize
+        self.de_quantize = linear_dequantize if self.discretization == 'linear' else log_dequantize
         
+        # take the centers of the bin edges
+        # used for reconstruction of the quantized signal
+        self.gen_loss = torch.nn.CrossEntropyLoss()
+    def reduce_temp(self):
+        self.temp = max(self.min_temp, self.temp_decay*self.temp)
+    def generate_wave(self, outputs, hard=False):
+        probs = torch.nn.functional.gumbel_softmax(outputs, self.temp, hard=hard)
+        # 3. reconstructs from bins centers
+        output_wave = self.de_quantize(probs)
+        return output_wave
+    def forward(self, outputs, targets):
+        # outputs is assumed to be logits of shape (B, T, N) with N = num_bins
+        # 1. compute sparse cross entropy w.r.t next token prediction
+        bin_indices = self.quantize(targets)
+        # next token prediction
+        loss_gen = self.gen_loss(outputs[:, :-1].reshape(-1, self.num_bins), bin_indices[:, 1:].reshape(-1))
+        # 2. Compute differentiable sample using Gumbel softmax reparametrization trick on categorical distribution
+        # hard = True will return one-hot vector, we want something softer
+        # temp is softmax temperature
+        # temp -> +inf => probs is uniform, tmp-> 0, probs is pure categorical distribution (one-hot)
+        # probs always sum to 1
+        probs = torch.nn.functional.gumbel_softmax(outputs, self.temp, hard=False)
+        # 3. reconstructs quantized vector from convex sum of bins centers
+        output_wave = self.de_quantize(probs)
+        # 4. compute spectral loss, recall that output_wave is the next step prediction
+        loss_spectral = self.spectral_loss(output_wave[:, :-1], targets[:, 1:])
+        return self.gen_loss_gain * loss_gen + self.spectral_loss_gain * loss_spectral
 class CompositeLoss(torch.nn.Module):
     def __init__(self, spectral_loss, spectral_loss_gain, mse_loss, mse_loss_gain):
         super().__init__()
@@ -124,6 +185,22 @@ class MLPSNN(pl.LightningModule):
     ) -> None:
         super().__init__()
         print(cfg)
+        #TODO: remove this workaround when the former config format has been removed
+        if cfg.get('loss', None) is None:
+            # assume composite loss
+            with open_dict(cfg):
+                cfg['loss'] = {
+                    'type': 'mse_spectral',
+                    'n_mels': cfg.n_mels,
+                    'min_window': cfg.min_window,
+                    'max_window': cfg.max_window,
+                    'mse_loss_gain': cfg.mse_loss_gain,
+                    'spectral_loss_gain': cfg.spectral_loss_gain,
+                }
+        if cfg.loss.type == 'nll_spectral':
+            # make sure that we don't average over the li / sli dim
+            cfg.decoder.l_out.reduce = 'none'
+        
         self.output_size = cfg.dataset.num_classes
         self.tracking_metric = cfg.tracking_metric
         self.tracking_mode = cfg.tracking_mode
@@ -145,9 +222,30 @@ class MLPSNN(pl.LightningModule):
         self.output_func = cfg.get('loss_agg', 'softmax')
         self.init_metrics_and_loss()
         self.save_hyperparameters()
-        # self.loss = MultiScaleMelSpetroLoss(cfg.dataset.sampling_freq, cfg.n_mels, cfg.min_window, cfg.max_window)
-        spectral_loss = MultiScaleMelSpetroLoss(cfg.dataset.sampling_freq, cfg.n_mels, cfg.min_window, cfg.max_window)
-        self.loss = CompositeLoss(spectral_loss, cfg.spectral_loss_gain, MSELoss(), cfg.mse_loss_gain)
+
+        spectral_loss = MultiScaleMelSpetroLoss(
+            cfg.dataset.sampling_freq, 
+            cfg.loss.n_mels, 
+            cfg.loss.min_window, 
+            cfg.loss.max_window)
+        if cfg.loss.type == 'mse_spectral':
+            self.loss = CompositeLoss(spectral_loss, 
+                                      cfg.loss.spectral_loss_gain,
+                                      MSELoss(),
+                                      cfg.loss.mse_loss_gain)
+        elif cfg.loss.type == 'nll_spectral':
+            self.loss = GenerativeSpectralLoss(
+                num_bins=cfg.decoder.l_out.n_neurons,
+                temp=cfg.loss.temp, 
+                gen_loss_gain=cfg.loss.mse_loss_gain, 
+                spectral_loss=spectral_loss,
+                spectral_loss_gain=cfg.loss.spectral_loss_gain,
+                discretization=cfg.loss.discretization,
+                temp_decay=cfg.loss.get('temp_decay', 1.0),
+                min_temp=cfg.loss.get('min_temp', 1.0))
+        else:
+            self.loss = spectral_loss
+        
         # regularization parameters
         self.min_spike_prob = cfg.min_spike_prob
         self.max_spike_prob = cfg.max_spike_prob
@@ -224,10 +322,13 @@ class MLPSNN(pl.LightningModule):
 
         """
         targets = targets[:, 1:]
+
         outputs = outputs[:, self.prediction_delay:]
+        if isinstance(self.loss, GenerativeSpectralLoss):
+            outputs = self.loss.generate_wave(outputs)
         outputs = outputs.reshape(-1, outputs.shape[-1])
         targets = targets.reshape(-1, targets.shape[-1])
-       
+
         metrics(outputs, targets)
         self.log_dict(
             metrics,
@@ -333,6 +434,10 @@ class MLPSNN(pl.LightningModule):
                 layers.extend([self.model.decoder.l1, self.model.decoder.out_layer])
             else:
                 layers.append(self.model.decoder.out_layer)
+            
+            batch_output = outputs[rnd_batch_idx][self.prediction_delay:]
+            if isinstance(self.loss, GenerativeSpectralLoss):
+                batch_output = self.loss.generate_wave(batch_output.unsqueeze(0)).squeeze()
                 
             for layer, module in enumerate(layers):
                 if hasattr(module, "layer_stats"):
@@ -348,7 +453,8 @@ class MLPSNN(pl.LightningModule):
                         if len(spike_probabilities) > layer
                         else None,
                         output_size=self.output_size,
-                        auto_regression=True
+                        auto_regression=True,
+                        output=batch_output.cpu().numpy(),
                     )
                     if layer < len(layers) - 1:
                         prev_layer_input = states[layer][1, rnd_batch_idx]
@@ -410,3 +516,7 @@ class MLPSNN(pl.LightningModule):
                 "monitor": self.tracking_metric,
             },
         })
+    def on_test_epoch_end(self):
+        if isinstance(self.loss, GenerativeSpectralLoss):
+            self.loss.reduce_temp()
+            

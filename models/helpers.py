@@ -153,3 +153,21 @@ def generic_scan_with_states(
             unrolled_body_(carry_out[:, :, i*unroll:, :][:, :, :unroll + 1, :], xs[:, i * unroll:][:, :unroll], out_ys[:, i * unroll:][:, :unroll])
     do_uncompiled_loop()
     return carry_out, out_ys
+
+def A_law(x: torch.Tensor, a: float = 87.6):
+    sign_x = torch.sign(x)
+    abs_x = torch.abs(x)
+    log_a = torch.log(a)
+    y1 =  (a*abs_x)/(1 + log_a)
+    y2 = (1 + torch.log(abs_x) + log_a)/(1 + log_a)
+    y = torch.where(abs_x < 1/a, y1, y2)
+    return sign_x*y
+
+def inverse_A_law(y: torch.Tensor, a: float = 87.6):
+    sign_y = torch.sign(y)
+    abs_y = torch.abs(y)
+    log_a_p1 = torch.log(a) + 1
+    x1 = (abs_y*log_a_p1)/a
+    x2 = torch.exp(-1 + abs_y*log_a_p1)/a
+    x = torch.where(abs_y < 1/log_a_p1, x1, x2)    
+    return sign_y*x
