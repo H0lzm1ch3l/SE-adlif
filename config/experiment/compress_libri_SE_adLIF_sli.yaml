@@ -3,6 +3,13 @@
 defaults:
   - /dataset: compress_libri
 
+enc_l1_neurons: 600
+enc_l2_neurons: 200
+dec_l1_neurons: 200
+dec_lout_neurons: 256
+bottleneck_neurons: 16
+
+
 exp_name: compres_libri_SE_adLIF
 unroll_factor: 64
 encoder:
@@ -11,7 +18,7 @@ encoder:
     # input size 
     cell: se_adlif
     input_size: 1
-    n_neurons: 600
+    n_neurons: ${enc_l1_neurons}
     use_recurrent: False
     thr: 1.0
     # gain for feedforward weight initialization
@@ -23,14 +30,12 @@ encoder:
     a_range: [0, 10]
     b_range: [0, 20]
     q: 12
-    train_tau_u_method: 'fixed'
-    train_tau_w_method: 'fixed'
     use_u_rest: True
     unroll: ${unroll_factor}
   l2:
     cell: se_adlif
-    input_size: 600
-    n_neurons: 300
+    input_size: ${enc_l1_neurons}
+    n_neurons: ${enc_l2_neurons}
     use_recurrent: True
     thr: 1.0
     # gain for feedforward weight initialization
@@ -42,18 +47,16 @@ encoder:
     a_range: [0, 10]
     b_range: [0, 20]
     q: 12
-    num_out_neuron: 16
+    num_out_neuron: ${bottleneck_neurons}
     use_u_rest: True
-    train_tau_u_method: 'fixed'
-    train_tau_w_method: 'fixed'
     unroll: ${unroll_factor}
 decoder:
   dropout: 0.0
   light_decoder: False
   l1:
     cell: se_adlif
-    input_size: 16
-    n_neurons: 200
+    input_size: ${bottleneck_neurons}
+    n_neurons: ${dec_l1_neurons}
     use_recurrent: True
     thr: 1.0
     # gain for feedforward weight initialization
@@ -66,20 +69,18 @@ decoder:
     b_range: [0, 20]
     q: 12
     use_u_rest: True
-    train_tau_u_method: 'fixed'
-    train_tau_w_method: 'fixed'
     unroll: ${unroll_factor}
   l_out:
-    cell: sli
-    input_size: 200
-    n_neurons: 20
+    cell: li
+    input_size: ${dec_l1_neurons}
+    n_neurons: ${dec_lout_neurons}
     reduce: 'mean' # perform reduce operation on the n_neurons dim (none, mean, sum)
     # Time constant of output layer 
-    train_tau_u_method: 'fixed'
-    train_tau_i_method: 'fixed'
+    train_tau_u_method: 'interpolation'
     tau_u_range: [5, 60]
-    tau_i_range: [1, 5]
     unroll: ${unroll_factor}
+
+
 # Parameters of SLAYER
 alpha: 5.0
 c: 0.8
@@ -112,11 +113,14 @@ n_mels: 64 # number of bins in the mel-scale spectrogram (this is the features d
 min_window: 6 # min size of the FFT windows in power of two 
 max_window: 9 # max size of the FTT windows in power of two
 
+spectral_loss_gain: 1.0
+mse_loss_gain: 10.0
+
 # regularization parameters
 min_spike_prob: [0.1, 0.005, 0.05] # , 0.1]
 max_spike_prob: [0.2, 0.01, 0.2] #, 0.2]
 min_layer_coeff: [10.0, 1.0, 10.0] #, 10.0] # encourage the first layer to spike
 max_layer_coeff: [0, 1000, 100] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
-compile: False
+compile: True
 
 random_seed: 42
