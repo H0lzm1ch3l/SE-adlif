@@ -114,7 +114,7 @@ class GenerativeSpectralLoss(torch.nn.Module):
         super().__init__(*args, **kwargs)
         self.num_bins = num_bins
         # the discretization assume [-1, 1] normalization 
-        self.temp = temp
+        self.register_buffer('temp', torch.tensor(temp))
         self.a = torch.tensor(86.7)
         self.gen_loss_gain = gen_loss_gain
         self.spectral_loss = spectral_loss
@@ -159,7 +159,7 @@ class GenerativeSpectralLoss(torch.nn.Module):
         # temp is softmax temperature
         # temp -> +inf => probs is uniform, tmp-> 0, probs is pure categorical distribution (one-hot)
         # probs always sum to 1
-        probs = torch.nn.functional.gumbel_softmax(outputs, self.temp, hard=False)
+        probs = torch.nn.functional.gumbel_softmax(outputs, self.temp.item(), hard=False)
         # 3. reconstructs quantized vector from convex sum of bins centers
         output_wave = self.de_quantize(probs)
         # 4. compute spectral loss, recall that output_wave is the next step prediction
