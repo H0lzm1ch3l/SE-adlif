@@ -38,7 +38,7 @@ class EFAdLIF(Module):
             thr = torch.FloatTensor(self.out_features, device=device).uniform_(thr[0], thr[1])
         else:
             thr = Tensor([thr,])
-        if cfg.train_thr:
+        if cfg.get('train_thr', False):
             self.thr = Parameter(thr)
         else:
             self.register_buffer('thr', thr)
@@ -130,7 +130,7 @@ class EFAdLIF(Module):
                 return step_fn(recurrent, alpha, beta, thr, a, b, u_rest, carry, cur)
 
             return generic_scan_with_states(wrapped_step, (u0, z0, w0), x, self.unroll)
-        if cfg.compile:
+        if cfg.get('compile', True):
             self.wrapped_scan = torch.compile(wrapped_scan)
         else:
             self.wrapped_scan = wrapped_scan
@@ -324,7 +324,7 @@ class SEAdLIF(EFAdLIF):
                 return step_fn(recurrent, alpha, beta, thr, a, b, u_rest, carry, cur)
             return generic_scan_with_states(wrapped_step, (u0, z0, w0), x, self.unroll)
         
-        if cfg.compile:
+        if cfg.get('compile', True):
             self.wrapped_scan = torch.compile(wrapped_scan)
         else:
             self.wrapped_scan = wrapped_scan
