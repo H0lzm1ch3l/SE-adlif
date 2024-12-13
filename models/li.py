@@ -67,7 +67,11 @@ class LI(Module):
             def wrapped_step(u0, x):
                 return step_fn(alpha, u0, x)
             return generic_scan_with_states(wrapped_step, (u0,), x, self.unroll)
-        self.wrapped_scan = torch.compile(wrapped_scan)
+        
+        if cfg.compile:
+            self.wrapped_scan = torch.compile(wrapped_scan)
+        else:
+            self.wrapped_scan = wrapped_scan
         self.wrapped_scan_with_states = wrapped_scan_with_states
         self.reset_parameters()
         

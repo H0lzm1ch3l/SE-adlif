@@ -21,6 +21,7 @@ encoder:
     n_neurons: ${enc_l1_neurons}
     use_recurrent: False
     thr: 1.0
+    train_thr: False
     # gain for feedforward weight initialization
     ff_gain: 10
     # Range of tau_u
@@ -32,12 +33,14 @@ encoder:
     q: 12
     use_u_rest: True
     unroll: ${unroll_factor}
+    compile: ${compile}
   l2:
     cell: se_adlif
     input_size: ${enc_l1_neurons}
     n_neurons: ${enc_l2_neurons}
     use_recurrent: True
     thr: 1.0
+    train_thr: False
     # gain for feedforward weight initialization
     ff_gain: 10
     # Range of tau_u
@@ -50,6 +53,7 @@ encoder:
     num_out_neuron: ${bottleneck_neurons}
     use_u_rest: True
     unroll: ${unroll_factor}
+    compile: ${compile}
 decoder:
   dropout: 0.0
   light_decoder: False
@@ -59,6 +63,7 @@ decoder:
     n_neurons: ${dec_l1_neurons}
     use_recurrent: True
     thr: 1.0
+    train_thr: False
     # gain for feedforward weight initialization
     ff_gain: 10
     # Range of tau_u
@@ -70,6 +75,7 @@ decoder:
     q: 12
     use_u_rest: True
     unroll: ${unroll_factor}
+    compile: ${compile}
   l_out:
     cell: li
     input_size: ${dec_l1_neurons}
@@ -79,6 +85,7 @@ decoder:
     train_tau_u_method: 'fixed'
     tau_u_range: [5, 60]
     unroll: ${unroll_factor}
+    compile: ${compile}
 
 
 # Parameters of SLAYER
@@ -97,7 +104,7 @@ tracking_mode: min
 
 # optimizer parameters
 # learning rate of the optimizer
-lr: 0.003
+lr: 0.01
 factor: 0.8
 patience: 5
 

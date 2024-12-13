@@ -4,6 +4,7 @@ from omegaconf import DictConfig
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import logging
 from models.pl_module_compress import MLPSNN
+import debugpy
 
 from pytorch_lightning.strategies import SingleDeviceStrategy
 import os
@@ -14,6 +15,9 @@ plt.rcParams['axes.prop_cycle'] = plt.cycler(color=colors)
 
 # Main entry point. We use Hydra (https://hydra.cc) for configuration management. 
 # Note, that Hydra changes the working directory, such that each run gets a unique directory.
+
+# debugpy.listen(("0.0.0.0", 5690))
+# debugpy.wait_for_client()  # blocks execution until client is attached
 
 @hydra.main(config_path="config", config_name="main", version_base=None)
 def main(cfg: DictConfig):        
@@ -51,6 +55,8 @@ def main(cfg: DictConfig):
             train_metric_prefix='train_',
             val_metric_prefix='val_',
         )
+        logger.log_hyperparams({"working_dir": os.getcwd()})
+        
     except ImportError:
         logging.warning(f"Aim import failed logging will fallback  to csv\n CSV file at {os.path.abspath(os.path.join(os.getcwd(),'logs/mlp/snn'))} location")
         logger = pl.loggers.CSVLogger("logs", name="mlp_snn")
@@ -63,6 +69,7 @@ def main(cfg: DictConfig):
         strategy=SingleDeviceStrategy(device=cfg.device),
         num_sanity_val_steps=1,
         )
+    trainer.validate(model, datamodule=datamodule)
     trainer.fit(model, datamodule=datamodule)
     result = trainer.test(model, ckpt_path="best", datamodule=datamodule)
     logging.info(f"Final result: {result}")
