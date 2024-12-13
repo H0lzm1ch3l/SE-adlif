@@ -11,7 +11,7 @@ bottleneck_neurons: 16
 
 
 exp_name: compres_libri_SE_adLIF
-unroll_factor: 64
+unroll_factor: 128
 encoder:
   dropout: 0.0
   l1:
