@@ -5,9 +5,11 @@ import torchmetrics
 from torch.nn import CrossEntropyLoss, MSELoss
 from omegaconf import DictConfig
 from pytorch_lightning.utilities import grad_norm
+import matplotlib.pyplot as plt
 
 from functional.loss import MultiScaleMelSpetroLoss, get_per_layer_spike_probs, snn_regularization
 from models.alif import EFAdLIF, SEAdLIF
+from models.helpers import save_fig_to_aim
 from models.li import LI
 from models.sli import SLI
 from models.lif import LIF
@@ -353,7 +355,33 @@ class MLPSNN(pl.LightningModule):
                     if layer < len(layers) - 1:
                         prev_layer_input = states[layer][1, rnd_batch_idx]
 
+            self.plot_reconstruction(outputs[rnd_batch_idx], targets[rnd_batch_idx])
         return loss
+    
+    @torch.compiler.disable
+    def plot_reconstruction(self, outputs, targets):
+        figure, axes = plt.subplots(nrows=2, ncols=1, sharex="all", figsize=(8, 8))
+        targets = torch.flatten(targets[1+self.skip_first_n:])
+        outputs = torch.flatten(outputs[self.skip_first_n+self.prediction_delay:])
+        outputs = outputs.cpu().detach().numpy()
+        targets = targets.cpu().detach().numpy()       
+        
+        axes[0].plot(outputs, label="Output")
+        axes[0].set_ylabel("Reconstruction vs Target")
+
+        axes[0].plot(targets, label="Target")
+        axes[0].legend()
+
+        axes[1].plot((outputs - targets) ** 2, label="MSE")
+        axes[1].set_ylabel("MSE")
+        plt.tight_layout()
+        plt.close(figure)
+        save_fig_to_aim(
+                logger=self.logger,
+                name=f"Reconstruction",
+                figure=figure,
+                epoch_step=self.current_epoch,
+            )
 
     def test_step(self, batch, batch_idx):
         inputs, targets, block_idx = batch
