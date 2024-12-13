@@ -38,7 +38,10 @@ class EFAdLIF(Module):
             thr = torch.FloatTensor(self.out_features, device=device).uniform_(thr[0], thr[1])
         else:
             thr = Tensor([thr,])
-        self.register_buffer('thr', thr)
+        if cfg.train_thr:
+            self.thr = Parameter(thr)
+        else:
+            self.register_buffer('thr', thr)
         self.alpha = cfg.get('alpha', 5.0)
         self.c = cfg.get('c', 0.4)
         self.tau_u_range = cfg.tau_u_range
@@ -127,7 +130,10 @@ class EFAdLIF(Module):
                 return step_fn(recurrent, alpha, beta, thr, a, b, u_rest, carry, cur)
 
             return generic_scan_with_states(wrapped_step, (u0, z0, w0), x, self.unroll)
-        self.wrapped_scan = torch.compile(wrapped_scan)
+        if cfg.compile:
+            self.wrapped_scan = torch.compile(wrapped_scan)
+        else:
+            self.wrapped_scan = wrapped_scan
         self.wrapped_scan_with_states = wrapped_scan_with_states
     
     def reset_parameters(self) -> None:
@@ -317,5 +323,9 @@ class SEAdLIF(EFAdLIF):
             def wrapped_step(carry, cur):
                 return step_fn(recurrent, alpha, beta, thr, a, b, u_rest, carry, cur)
             return generic_scan_with_states(wrapped_step, (u0, z0, w0), x, self.unroll)
-        self.wrapped_scan = torch.compile(wrapped_scan)
+        
+        if cfg.compile:
+            self.wrapped_scan = torch.compile(wrapped_scan)
+        else:
+            self.wrapped_scan = wrapped_scan
         self.wrapped_scan_with_states = wrapped_scan_with_states
