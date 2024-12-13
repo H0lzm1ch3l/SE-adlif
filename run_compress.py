@@ -67,7 +67,7 @@ def main(cfg: DictConfig):
         # gradient_clip_val=1.5,
         enable_progress_bar=True,
         strategy=SingleDeviceStrategy(device=cfg.device),
-        num_sanity_val_steps=0,
+        num_sanity_val_steps=1,
         )
     trainer.validate(model, datamodule=datamodule)
     trainer.fit(model, datamodule=datamodule)

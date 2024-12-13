@@ -141,7 +141,7 @@ class SLI(Module):
         
     @torch.compiler.disable
     @staticmethod
-    def plot_states(layer_idx, inputs, states, targets, block_idx, output_size, auto_regression):
+    def plot_states(layer_idx, inputs, states, targets, block_idx, output_size, auto_regression, output=None):
         figure, axes = plt.subplots(nrows=5, ncols=1, sharex="all", figsize=(8, 11))
         is_events = torch.all(inputs == inputs.round())
         inputs = inputs.cpu().detach().numpy()
@@ -166,9 +166,12 @@ class SLI(Module):
         axes[1].set_ylabel("i_t/synapse current")
         axes[2].plot(states[1])
         axes[2].set_ylabel("u_t")
-        out = states[1]
-        if out.shape[-1] > 1:
-            out = np.mean(out, -1)
+        if output is None:
+            out = states[1]
+            if out.shape[-1] > 1:
+                out = np.mean(out, -1)
+        else:
+            out = output
         axes[3].plot(out)
         axes[3].set_ylabel("prediction")
         
@@ -215,8 +218,8 @@ class SLI(Module):
                 logger=logger,
                 name=f"{layer_idx}_Activity",
                 figure=SLI.plot_states(
-                    layer_idx, inputs, states, targets, block_idx, output_size, auto_regression=kwargs['auto_regression']
-                ),
+                    layer_idx, inputs, states, targets, block_idx, output_size, auto_regression=kwargs['auto_regression'], 
+                output=kwargs.get('output', None)),
                 epoch_step=epoch_step,
             )
 

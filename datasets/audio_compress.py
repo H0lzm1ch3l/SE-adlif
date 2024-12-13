@@ -268,6 +268,7 @@ class CompressLibri(pl.LightningDataModule):
         sampling_freq: int = 24_000,
         sample_length: int = -1,
         prediction_delay: int = 0,
+        zero_input_proba: float = 0,
         batch_size: int = 32,
         num_workers: int = 1,
         fits_into_ram: bool = False,
@@ -317,35 +318,21 @@ class CompressLibri(pl.LightningDataModule):
             )
             block_idx = torch.ones((inputs.shape[0],), dtype=torch.int32)
             return inputs, targets, block_idx
+        def zero_inputs(inputs, targets, block_idx):
+            rd = torch.rand(()).item()
+            if rd < zero_input_proba:
+                inputs = torch.zeros_like(inputs)
+                targets = torch.zeros_like(targets)
+            return inputs, targets, block_idx
+        def compose_full_transform(inputs, targets, block_idx):
+            inputs, targets, block_idx = delay_transform(inputs, targets, block_idx)
+            return zero_inputs(inputs, targets, block_idx)
 
         self.train_dataset_ = DiskCachedDataset(
             self.train_dataset_,
             cache_path=self.cache_path,
-            full_transform=delay_transform if prediction_delay > 0 else None,
+            full_transform=compose_full_transform
         )
-
-        # create cache directly
-        # Use ThreadPoolExecutor with tqdm progress bar
-        def process_item(index, obj):
-            obj[index]
-
-        if not Path(self.cache_path).exists():
-            print("Generating cache...")
-            with ThreadPoolExecutor() as executor:
-                # Create a tqdm iterator to track progress
-                futures = [
-                    executor.submit(process_item, i, self.train_dataset_)
-                    for i in tqdm(range(len(self.train_dataset_)), desc="Sending tasks")
-                ]
-                with tqdm(
-                    total=len(futures), desc="Completed tasks", ncols=100
-                ) as pbar:
-                    for future in as_completed(
-                        futures
-                    ):  # as_completed yields futures as they finish
-                        # Wait for each future to complete and update the progress bar
-                        future.result()  # Optionally, this will raise exceptions if any task fails
-                        pbar.update(1)  # Update progress bar as each task completes
 
         self.train_dataset_, self.valid_dataset_, self.test_dataset_ = (
             torch.utils.data.random_split(

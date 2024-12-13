@@ -4,8 +4,8 @@ defaults:
   - /dataset: compress_libri
 
 enc_l1_neurons: 600
-enc_l2_neurons: 200
-dec_l1_neurons: 200
+enc_l2_neurons: 300
+dec_l1_neurons: 300
 dec_lout_neurons: 256
 bottleneck_neurons: 16
 
@@ -75,6 +75,7 @@ decoder:
     input_size: ${dec_l1_neurons}
     n_neurons: ${dec_lout_neurons}
     reduce: 'mean' # perform reduce operation on the n_neurons dim (none, mean, sum)
+    # when using the nll loss reduce is set to none
     # Time constant of output layer 
     train_tau_u_method: 'interpolation'
     tau_u_range: [5, 60]
@@ -107,20 +108,25 @@ grad_norm: 5
 num_fast_epoch: 0
 fast_epoch_lr_factor: 10
 skip_first_n: 50
+loss:
+  type: nll_spectral # mse_spectral, nll_spectral (generative loss), spectral (only spectral)
+  # Spectral loss parameters (cf. https://arxiv.org/abs/2008.01160)
+  n_mels: 64 # number of bins in the mel-scale spectrogram (this is the features dimension of the spectrogram)
+  min_window: 6 # min size of the FFT windows in power of two 
+  max_window: 9 # max size of the FTT windows in power of two
+  spectral_loss_gain: 1.0
+  mse_loss_gain: 1.0 # this is reused for the generative loss gain
+  temp: 10.0 # temperature for Gumbel, higher value converge toward uniform distribution
+  min_temp: 1.0
+  temp_decay: 0.98
+  discretization: 'log'
 
-# Spectral loss parameters (cf. https://arxiv.org/abs/2008.01160)
-n_mels: 64 # number of bins in the mel-scale spectrogram (this is the features dimension of the spectrogram)
-min_window: 6 # min size of the FFT windows in power of two 
-max_window: 9 # max size of the FTT windows in power of two
-
-spectral_loss_gain: 1.0
-mse_loss_gain: 10.0
 
 # regularization parameters
-min_spike_prob: [0.1, 0.005, 0.05] # , 0.1]
+min_spike_prob: [0.05, 0.005, 0.05] # , 0.1]
 max_spike_prob: [0.2, 0.01, 0.2] #, 0.2]
 min_layer_coeff: [10.0, 1.0, 10.0] #, 10.0] # encourage the first layer to spike
-max_layer_coeff: [0, 1000, 100] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
+max_layer_coeff: [0, 1000, 10] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
 compile: True
 
 random_seed: 42
