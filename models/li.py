@@ -121,7 +121,7 @@ class LI(Module):
         
     @torch.compiler.disable
     @staticmethod
-    def plot_states(layer_idx, inputs, states, targets, block_idx, output_size, auto_regression):
+    def plot_states(layer_idx, inputs, states, targets, block_idx, output_size, auto_regression, output=None):
         figure, axes = plt.subplots(nrows=4, ncols=1, sharex="all", figsize=(8, 11))
         is_events = torch.all(inputs == inputs.round())
         inputs = inputs.cpu().detach().numpy()
@@ -143,9 +143,12 @@ class LI(Module):
         
         axes[1].plot(states[0])
         axes[1].set_ylabel("u_t")
-        out = states[0]
-        if out.shape[-1] > 1:
-            out = np.mean(out, -1)
+        if output is None:
+            out = states[0]
+            if out.shape[-1] > 1:
+                out = np.mean(out, -1)
+        else:
+            out = output
         axes[2].plot(out)
         axes[2].set_ylabel("prediction")
         if auto_regression:
@@ -194,8 +197,8 @@ class LI(Module):
                 logger=logger,
                 name=f"{layer_idx}_Activity",
                 figure=LI.plot_states(
-                    layer_idx, inputs, states, targets, block_idx, output_size, auto_regression=kwargs['auto_regression']
-                ),
+                    layer_idx, inputs, states, targets, block_idx, output_size, auto_regression=kwargs['auto_regression'], 
+                output=kwargs.get('output', None)),
                 epoch_step=epoch_step,
             )
 
