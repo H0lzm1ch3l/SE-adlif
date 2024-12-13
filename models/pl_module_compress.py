@@ -437,7 +437,7 @@ class MLPSNN(pl.LightningModule):
             else:
                 layers.append(self.model.decoder.out_layer)
             
-            batch_output = outputs[rnd_batch_idx][self.prediction_delay:]
+            batch_output = outputs[rnd_batch_idx]
             if isinstance(self.loss, GenerativeSpectralLoss):
                 batch_output = self.loss.generate_wave(batch_output.unsqueeze(0)).squeeze()
                 
@@ -461,7 +461,7 @@ class MLPSNN(pl.LightningModule):
                     if layer < len(layers) - 1:
                         prev_layer_input = states[layer][1, rnd_batch_idx]
 
-            self.plot_reconstruction(outputs[rnd_batch_idx], targets[rnd_batch_idx])
+            self.plot_reconstruction(batch_output, targets[rnd_batch_idx])
         return loss
     
     @torch.compiler.disable
