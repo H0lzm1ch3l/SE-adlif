@@ -22,7 +22,7 @@ encoder:
     use_recurrent: False
     thr: 1.0
     # gain for feedforward weight initialization
-    ff_gain: 10
+    ff_gain: 1
     # Range of tau_u
     tau_u_range: [5, 25]
     # Range of tau_w
@@ -41,7 +41,7 @@ encoder:
     use_recurrent: True
     thr: 1.0
     # gain for feedforward weight initialization
-    ff_gain: 10
+    ff_gain: 1
     # Range of tau_u
     tau_u_range: [5, 25]
     # Range of tau_w
@@ -64,7 +64,7 @@ decoder:
     use_recurrent: True
     thr: 1.0
     # gain for feedforward weight initialization
-    ff_gain: 10
+    ff_gain: 1
     # Range of tau_u
     tau_u_range: [5, 25]
     # Range of tau_w
@@ -97,7 +97,7 @@ thr: 1.0
 dt: 1.0
 
 # Number of epochs
-n_epochs: 20
+n_epochs: -1
 
 
 # Metric tracking
@@ -108,7 +108,7 @@ tracking_mode: min
 # learning rate of the optimizer
 lr: 0.01
 factor: 0.5
-patience: 1
+patience: 3
 
 grad_norm: 5
 
@@ -133,8 +133,9 @@ loss:
 # regularization parameters
 min_spike_prob: [0.05, 0.005, 0.05] # , 0.1]
 max_spike_prob: [0.2, 0.01, 0.2] #, 0.2]
-min_layer_coeff: [10.0, 1.0, 10.0] #, 10.0] # encourage the first layer to spike
+min_layer_coeff: [1.0, 1.0, 1.0] #, 10.0] # encourage the first layer to spike
 max_layer_coeff: [0, 1000, 10] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
 compile: True
+check_val_every_n_epoch: 1
 
 random_seed: 42

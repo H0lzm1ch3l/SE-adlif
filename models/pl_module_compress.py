@@ -456,7 +456,7 @@ class MLPSNN(pl.LightningModule):
                         else None,
                         output_size=self.output_size,
                         auto_regression=True,
-                        output=batch_output.cpu().numpy(),
+                        output=batch_output[self.prediction_delay:].cpu().numpy(),
                     )
                     if layer < len(layers) - 1:
                         prev_layer_input = states[layer][1, rnd_batch_idx]
