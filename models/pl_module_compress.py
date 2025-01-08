@@ -5,6 +5,8 @@ import torchmetrics
 from torch.nn import CrossEntropyLoss, MSELoss
 from omegaconf import DictConfig, open_dict
 from pytorch_lightning.utilities import grad_norm
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from functional.loss import MultiScaleMelSpetroLoss, get_per_layer_spike_probs, snn_regularization
@@ -58,31 +60,41 @@ class Decoder(torch.nn.Module):
         super().__init__()
         self.light_decoder = cfg.light_decoder
         self.l1 = layer_map[cfg.l1.cell](cfg.l1)
+        self.l2 = layer_map[cfg.l2.cell](cfg.l2)
 
         self.l1_spike = torch.empty(size=())
+        self.l2_spike = torch.empty(size=())
+        
         self.aux_out = torch.empty(size=())
         self.out_layer = layer_map[cfg.l_out.cell](cfg.l_out)
         self.dropout = cfg.dropout
 
     def apply_parameter_constraints(self):
+        self.l1.apply_parameter_constraints()
         if not self.light_decoder:
-            self.l1.apply_parameter_constraints()
+            self.l2.apply_parameter_constraints()
         self.out_layer.apply_parameter_constraints()
     
     def forward(self, inputs):
         out = inputs
+        out = self.l1(out)
+        self.l1_spike = out
+            
         if not self.light_decoder:
-            out = self.l1(out)
-            self.l1_spike = out
+            out = self.l2(out)
+            self.l2_spike = out
         out = self.out_layer(out)
         return out
     def forward_with_states(self, inputs):
         out = inputs
         states = []
+        l1_states, out = self.l1.forward_with_states(out)
+        self.l1_spike = out
+        states.append(l1_states)
         if not self.light_decoder:
-            l1_states, out = self.l1.forward_with_states(out)
-            self.l1_spike = out
-            states.append(l1_states)
+            l2_states, out = self.l2.forward_with_states(out)
+            self.l2_spike = out
+            states.append(l2_states)
         out_states, out = self.out_layer.forward_with_states(out)
         states.append(out_states)
         return states, out
@@ -255,8 +267,8 @@ class MLPSNN(pl.LightningModule):
         self.max_layer_coeff = cfg.max_layer_coeff
         self.light_decoder = cfg.decoder.light_decoder
         if self.light_decoder:
-            self.min_layer_coeff = self.min_layer_coeff[:2]
-            self.max_layer_coeff = self.max_layer_coeff[:2] 
+            self.min_layer_coeff = self.min_layer_coeff[:-1]
+            self.max_layer_coeff = self.max_layer_coeff[:-1] 
         self.grad_norm = cfg.grad_norm
         self.automatic_optimization=False
 
@@ -377,9 +389,9 @@ class MLPSNN(pl.LightningModule):
             prefix="train_",
         )
             
-        sum_spikes = [self.model.encoder.l1_spike, self.model.encoder.l2_spike]
+        sum_spikes = [self.model.encoder.l1_spike, self.model.encoder.l2_spike, self.model.decoder.l1_spike]
         if not self.light_decoder:
-            sum_spikes.extend([self.model.decoder.l1_spike,])
+            sum_spikes.extend([self.model.decoder.l2_spike,])
         # remove ignored spike then take the neuron-wise spike proba 
         sum_spikes = [x[:, self.skip_first_n:].mean(0).mean(0) for x in sum_spikes]
         reg_upper, log_upper = snn_regularization(sum_spikes, self.max_spike_prob, torch.tensor(self.max_layer_coeff, device=inputs.device), 'upper', reduce_layer='sum', reduce_neuron="sum")
@@ -430,10 +442,10 @@ class MLPSNN(pl.LightningModule):
             )
             rnd_batch_idx = torch.randint(0, inputs.shape[0], size=()).item()
             prev_layer_input = inputs[rnd_batch_idx]
-            layers = [self.model.encoder.l1,self.model.encoder.l2,]
+            layers = [self.model.encoder.l1,self.model.encoder.l2,self.model.decoder.l1,]
             if not self.light_decoder:
                 # layers.extend([self.model.decoder.l1, self.model.decoder.l2, self.model.decoder.out_layer])
-                layers.extend([self.model.decoder.l1, self.model.decoder.out_layer])
+                layers.extend([self.model.decoder.l2,self.model.decoder.out_layer])
             else:
                 layers.append(self.model.decoder.out_layer)
             

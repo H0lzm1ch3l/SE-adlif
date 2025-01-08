@@ -5,7 +5,7 @@ name: Compress libri task
 required_model_size: small
 data_path: ${datadir}
 cache_path: ${cachedir}
-max_sample: -1
+max_sample: 10000
 sampling_freq: 16000
 sample_length: 512
 # allow to do y[t - delay] L(x[0:t]) instead to of y[t] = L(x[0:t]) 
