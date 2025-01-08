@@ -132,7 +132,7 @@ thr: 1.0
 dt: 1.0
 
 # Number of epochs
-n_epochs: 200
+n_epochs: -1
 
 
 # Metric tracking
@@ -171,5 +171,6 @@ max_spike_prob: [0.2, 0.01, 0.2, 0.2] #, 0.2]
 min_layer_coeff: [10.0, 1.0, 10.0, 10.0] #, 10.0] # encourage the first layer to spike
 max_layer_coeff: [0, 1000, 10.0, 10.0] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
 compile: True
+check_val_every_n_epoch: 1
 
 random_seed: 42
