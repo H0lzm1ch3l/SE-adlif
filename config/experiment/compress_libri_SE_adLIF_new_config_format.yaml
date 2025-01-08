@@ -13,7 +13,7 @@ bottleneck_neurons: 16
  #    "cos" reparametized "a" adapt parameter in terms of cos(w), with trainable w 
  #    "linear" standard step function 
 step_type: cos
-tau_training: interpolation
+tau_training: interpolationExpSigmoid
 exp_name: compres_libri_SE_adLIF
 unroll_factor: 64
 encoder:
@@ -167,8 +167,8 @@ loss:
 
 # regularization parameters
 min_spike_prob: [0.1, 0.005, 0.5, 0.5] # , 0.1]
-max_spike_prob: [0.2, 0.01, 0.2, 0.2] #, 0.2]
-min_layer_coeff: [10.0, 1.0, 10.0, 10.0] #, 10.0] # encourage the first layer to spike
+max_spike_prob: [0.2, 0.02, 0.2, 0.2] #, 0.2]
+min_layer_coeff: [10.0, 10.0, 10.0, 10.0] #, 10.0] # encourage the first layer to spike
 max_layer_coeff: [0, 1000, 10.0, 10.0] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
 compile: True
 check_val_every_n_epoch: 1
