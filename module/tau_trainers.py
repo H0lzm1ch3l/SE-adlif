@@ -6,6 +6,10 @@ from torch.nn.parameter import Parameter
 def get_tau_trainer_class(name: str):
     if name == "interpolation":
         return InterpolationTrainer
+    elif name == 'interpolationSigmoid':
+        return InterpolationSigmoidTrainer
+    elif name == 'interpolationExpSigmoid':
+        return InterpolationExpSigmoidTrainer
     elif name == "fixed":
         return FixedTau
     else:
@@ -104,4 +108,62 @@ class InterpolationTrainer(TauTrainer):
 
     def reset_parameters(self):
         torch.nn.init.uniform_(self.weight)
+        self.weight.requires_grad = True
+        
+class InterpolationSigmoidTrainer(TauTrainer):
+    def __init__(
+        self,
+        in_features: int,
+        dt: float,
+        tau_min: float,
+        tau_max: float,
+        device=None,
+        dtype=None,
+        **kwargs,
+    ) -> None:
+        super().__init__(in_features, dt, tau_min, tau_max, device, dtype, **kwargs)
+    @torch.jit.ignore
+    def apply_parameter_constraints(self):
+        pass
+
+    def forward(self):
+        return torch.exp(-self.dt / self.get_tau())
+
+    def get_tau(self):
+        coef = torch.sigmoid(self.weight)
+        return  coef * self.tau_max + (1.0 - coef) * self.tau_min
+
+    def reset_parameters(self):
+        torch.nn.init.uniform_(self.weight, -1, 1)
+        self.weight.requires_grad = True
+class InterpolationExpSigmoidTrainer(TauTrainer):
+    def __init__(
+        self,
+        in_features: int,
+        dt: float,
+        tau_min: float,
+        tau_max: float,
+        device=None,
+        dtype=None,
+        **kwargs,
+    ) -> None:
+        super().__init__(in_features, dt, tau_min, tau_max, device, dtype, **kwargs)
+        self.register_buffer('alpha_min',torch.exp(-dt/self.tau_min))
+        self.register_buffer('alpha_max', torch.exp(-dt/self.tau_max))
+        
+    @torch.jit.ignore
+    def apply_parameter_constraints(self):
+        pass
+
+    def forward(self):
+        coef = torch.sigmoid(self.weight)
+        return self.alpha_max * coef + (1.0 - coef)*self.alpha_min
+
+    def get_tau(self):
+        alpha = self.forward()
+        
+        return -1/torch.log(alpha)
+
+    def reset_parameters(self):
+        torch.nn.init.uniform_(self.weight, -1, 1)
         self.weight.requires_grad = True

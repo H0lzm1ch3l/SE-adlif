@@ -8,8 +8,9 @@ from models.pl_module_compress import MLPSNN
 
 from pytorch_lightning.strategies import SingleDeviceStrategy
 import os
-import matplotlib.pyplot as plt
 import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 colors = matplotlib.colormaps.get_cmap('tab20').colors + matplotlib.colormaps.get_cmap('Set1').colors
 plt.rcParams['axes.prop_cycle'] = plt.cycler(color=colors)
 

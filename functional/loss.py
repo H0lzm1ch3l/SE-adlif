@@ -122,10 +122,15 @@ def snn_regularization(spike_proba_per_layer: list[torch.Tensor], target: Union[
     """
     if isinstance(target, float):
         target = [target,] * len(spike_proba_per_layer)
+        
+    target = torch.tensor(target, dtype=spike_proba_per_layer[0].dtype, device=spike_proba_per_layer[0].device)
+    
     if reg_type == "lower":
-        reg = [(torch.relu(tg - s) ** 2) for tg, s in zip(target, spike_proba_per_layer)]
+        # reg = [(torch.nn.functional.huber_loss(tg - s) ** 2 ) for tg, s in zip(target, spike_proba_per_layer)]
+        reg = [(torch.nn.functional.huber_loss(s, torch.ones_like(s)*tg, reduction="none") * (s < tg).float()) for tg, s in zip(target, spike_proba_per_layer)]
+
     elif reg_type == "upper":
-        reg = [(torch.relu(s - tg) ** 2) for tg, s in zip(target, spike_proba_per_layer)]
+        reg = [(torch.nn.functional.huber_loss(s, torch.ones_like(s)*tg, reduction="none") * (s > tg).float()) for tg, s in zip(target, spike_proba_per_layer)]
     elif reg_type == "both":
         reg = [((s - tg) ** 2) for tg, s in zip(target, spike_proba_per_layer)]
     else:
