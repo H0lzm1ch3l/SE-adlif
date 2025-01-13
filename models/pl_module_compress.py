@@ -199,18 +199,6 @@ class MLPSNN(pl.LightningModule):
     ) -> None:
         super().__init__()
         print(cfg)
-        #TODO: remove this workaround when the former config format has been removed
-        if cfg.get('loss', None) is None:
-            # assume composite loss
-            with open_dict(cfg):
-                cfg['loss'] = {
-                    'type': 'mse_spectral',
-                    'n_mels': cfg.n_mels,
-                    'min_window': cfg.min_window,
-                    'max_window': cfg.max_window,
-                    'mse_loss_gain': cfg.mse_loss_gain,
-                    'spectral_loss_gain': cfg.spectral_loss_gain,
-                }
         if cfg.loss.type == 'nll_spectral':
             # make sure that we don't average over the li / sli dim
             cfg.decoder.l_out.reduce = 'none'
@@ -227,9 +215,10 @@ class MLPSNN(pl.LightningModule):
         self.patience = cfg.patience
         self.num_fast_epoch = cfg.get('num_fast_epoch', 0)
         self.fast_epoch_lr_factor = cfg.get('fast_epoch_lr_factor', 0)
+        self.min_lr = cfg.get('min_lr', 0)
 
         self.batch_size = cfg.dataset.batch_size
-        self.model = Net(cfg) #, fullgraph=True, dynamic=False)#, example_inputs=[torch.zeros([256, 1024, 1], dtype=torch.float),])
+        self.model = Net(cfg)
         if cfg.get('compile', False):
             self.model = torch.compile(self.model, dynamic=True)
             
@@ -544,6 +533,7 @@ class MLPSNN(pl.LightningModule):
             mode=self.tracking_mode,
             factor=self.factor,
             patience=self.patience,
+            min_lr=self.min_lr,
         )
         return (
             {
