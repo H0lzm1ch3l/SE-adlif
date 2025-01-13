@@ -366,7 +366,8 @@ class SEAdLIF(EFAdLIF):
         
         if cfg.get('compile', True):
             self.wrapped_scan = torch.compile(wrapped_scan)
+            self.wrapped_scan_with_states = torch.compile(wrapped_scan_with_states)
         else:
             self.wrapped_scan = wrapped_scan
-        self.wrapped_scan_with_states = wrapped_scan_with_states
+            self.wrapped_scan_with_states = wrapped_scan_with_states
         self.reset_parameters()

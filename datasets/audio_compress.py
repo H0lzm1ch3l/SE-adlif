@@ -231,7 +231,6 @@ class LibriTTS(Dataset):
         inputs: torch.Tensor = get_chunk_by_id(
             index, self.chunk_map, self.sample_length, self.norm_func
         ).T
-        # inputs = (inputs - inputs.min())/(inputs.max() - inputs.min())
         targets = inputs.clone()
         block_idx = torch.ones((inputs.shape[0],), dtype=torch.int32)
         if self.transform is not None:
@@ -333,11 +332,17 @@ class CompressLibri(pl.LightningDataModule):
             cache_path=self.cache_path,
             full_transform=compose_full_transform
         )
-
+        n_sample = len(self.train_dataset_)
+        # always aim for 7*batch_size samples per valid and test set rest is train set
+        # this prevents that too much data is used for validation when the dataset is very large
+        i = 7
+        while i > 1 and n_sample - 2*batch_size*i < 0:
+            i -= 1
+            
         self.train_dataset_, self.valid_dataset_, self.test_dataset_ = (
             torch.utils.data.random_split(
                 self.train_dataset_,
-                [0.8, 0.1, 0.1],
+                [n_sample - 2*i*batch_size, i*batch_size, i*batch_size],
                 generator=None,
             )
         )
