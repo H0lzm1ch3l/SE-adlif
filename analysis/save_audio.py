@@ -86,8 +86,8 @@ if __name__ == "__main__":
     ckp_path = sys.argv[1]
     # repair_checkpoint(ckp_path)
     cfg_path = os.path.join(os.path.dirname(ckp_path), "..", ".hydra", "config.yaml")
-    # source_waveform, prediction_waveform, spike_probs = create_audio_example(cfg_path, ckp_path, [1, 200, 1529], False)
-    source_waveform, prediction_waveform, spike_probs = create_audio_example(cfg_path, ckp_path, [1], False)
+    source_waveform, prediction_waveform, spike_probs = create_audio_example(cfg_path, ckp_path, [1, 200, 1529], False)
+    # source_waveform, prediction_waveform, spike_probs = create_audio_example(cfg_path, ckp_path, [1], False)
 
     # %%
     print(f"shape of source_waveform: {torch.tensor(source_waveform[0]).unsqueeze(-1).shape}")
