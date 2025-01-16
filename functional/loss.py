@@ -2,11 +2,107 @@ import math
 from typing import Optional, Union
 import torch
 from torchaudio.transforms import MelSpectrogram
+from auraloss.freq import STFTLoss, MultiResolutionSTFTLoss
 reduce_map = {
     'mean': lambda x: torch.mean(x),
     'sum': lambda x: torch.sum(x),
     'none': lambda x: x,
 }
+class MultiResolutionSTFTLossWithScaling(torch.nn.Module):
+    """Multi resolution STFT loss module wrapper from auraloss
+    simply add possibility to provide to weights each windows independently.
+    
+
+    See [Yamamoto et al., 2019](https://arxiv.org/abs/1910.11480)
+
+    Args:
+        fft_sizes (list): List of FFT sizes.
+        hop_sizes (list): List of hop sizes.
+        win_lengths (list): List of window lengths.
+        window (str, optional): Window to apply before FFT, options include:
+            'hann_window', 'bartlett_window', 'blackman_window', 'hamming_window', 'kaiser_window']
+            Default: 'hann_window'
+        w_sc (float, optional): Weight of the spectral convergence loss term. Default: 1.0
+        w_log_mag (float, list[float], optional): Weight of the log magnitude loss term. Default: 1.0
+        w_lin_mag (float, list[float], optional): Weight of the linear magnitude loss term. Default: 0.0
+        w_phs (float, list[float], optional): Weight of the spectral phase loss term. Default: 0.0
+        sample_rate (int, optional): Sample rate. Required when scale = 'mel'. Default: None
+        scale (str, optional): Optional frequency scaling method, options include:
+            ['mel', 'chroma']
+            Default: None
+        n_bins (int, optional): Number of mel frequency bins. Required when scale = 'mel'. Default: None.
+        scale_invariance (bool, optional): Perform an optimal scaling of the target. Default: False
+    """
+    def __init__(self, fft_sizes: list[int], hop_sizes: list[int], win_lengths: list[int], 
+                 window: str = "hann_window",
+                 w_sc: Union[float, list[float]] = 1.0,
+                 w_log_mag: Union[float, list[float]] = 1.0, 
+                 w_lin_mag: Union[float, list[float]] = 0.0, 
+                 w_phs: Union[float, list[float]] = 0.0,
+                 sample_rate = None, 
+                 scale = None, 
+                 n_bins = None, 
+                 perceptual_weighting = False, 
+                 scale_invariance = False, **kwargs):
+        super().__init__()
+        
+        assert len(fft_sizes) == len(hop_sizes) == len(win_lengths)  # must define all
+        num_res = len(fft_sizes)
+        if isinstance(w_sc, float):
+            w_sc = [w_sc,] * num_res
+        if isinstance(w_log_mag, float):
+            w_log_mag = [w_log_mag,] * num_res
+        if isinstance(w_lin_mag, float):
+            w_lin_mag = [w_lin_mag, ] * num_res
+        if isinstance(w_phs, float):
+            w_phs = [w_phs,] * num_res
+            
+        self.fft_sizes = fft_sizes
+        self.hop_sizes = hop_sizes
+        self.win_lengths = win_lengths
+
+        self.stft_losses = torch.nn.ModuleList()
+        for fs, ss, wl, i_w_sc, i_w_log_mag, i_w_lin_mag, i_w_phs  in zip(fft_sizes, hop_sizes, win_lengths, w_sc, w_log_mag, w_log_mag, w_phs):
+            self.stft_losses += [
+                STFTLoss(
+                    fs,
+                    ss,
+                    wl,
+                    window,
+                    i_w_sc,
+                    i_w_log_mag,
+                    i_w_lin_mag,
+                    i_w_phs,
+                    sample_rate,
+                    scale,
+                    n_bins,
+                    perceptual_weighting,
+                    scale_invariance,
+                    **kwargs,
+                )
+            ]
+    def forward(self, x, y):
+
+        mrstft_loss = 0.0
+        sc_mag_loss, log_mag_loss, lin_mag_loss, phs_loss = [], [], [], []
+
+        for f in self.stft_losses:
+            if f.output == "full":  # extract just first term
+                tmp_loss = f(x, y)
+                mrstft_loss += tmp_loss[0]
+                sc_mag_loss.append(tmp_loss[1])
+                log_mag_loss.append(tmp_loss[2])
+                lin_mag_loss.append(tmp_loss[3])
+                phs_loss.append(tmp_loss[4])
+            else:
+                mrstft_loss += f(x, y)
+
+        mrstft_loss /= len(self.stft_losses)
+
+        if f.output == "loss":
+            return mrstft_loss
+        else:
+            return mrstft_loss, sc_mag_loss, log_mag_loss, lin_mag_loss, phs_loss
 class MultiScaleMelSpetroLoss(torch.nn.Module):
     def __init__(self, sampling_rate, n_mels, min_windows_power, max_windows_power, reduce='mean'):
         super().__init__()
