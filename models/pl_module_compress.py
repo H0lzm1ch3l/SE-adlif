@@ -276,7 +276,7 @@ class MLPSNN(pl.LightningModule):
         self.save_hyperparameters()
         
         windows_length = [2**i for i in range(cfg.loss.min_window, cfg.loss.max_window+1)]
-        windows_hops = [int(math.floor(w / 4)) for w in windows_length]
+        windows_hops = [w//4 for w in windows_length]
 
         # this is pretty standard that n_fft = windows_length, 
         # if n_fft < windows_length we loose information
@@ -288,7 +288,7 @@ class MLPSNN(pl.LightningModule):
         # Issues for us, we need:
         # n_fft >> n_mels as low value imply empty filter 
         # n_fft/2 <= sample_length -  skip_first_n
-        n_fft = [max(cfg.loss.n_mels*4, w) for w in windows_length]
+        n_fft = [2**cfg.loss.max_window for w in windows_length]
         scale = cfg.loss.spectrum
         if scale == 'stft':
             scale = None
