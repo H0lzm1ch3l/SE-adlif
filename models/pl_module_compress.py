@@ -11,10 +11,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from functional.loss import (
-    MultiScaleMelSpetroLoss,
+    MultiResolutionSTFTLoss,
     get_per_layer_spike_probs,
     snn_regularization,
-    MultiResolutionSTFTLossWithScaling,
 )
 from models.alif import EFAdLIF, SEAdLIF
 from models.helpers import A_law, inverse_A_law
@@ -23,7 +22,6 @@ from models.li import LI
 from models.sli import SLI
 from models.lif import LIF
 from models.rnn import LSTMCellWrapper
-from functional.stft_loss import STFTLoss, MultiResolutionSTFTLoss
 
 
 # from models.sli import SLI
@@ -287,29 +285,39 @@ class MLPSNN(pl.LightningModule):
         # Audio framework recommands:
         # n_fft = windows_length*2**i
         # https://support.ircam.fr/docs/AudioSculpt/3.0/co/FFT%20Size.html
-        # Issues for us:
+        # Issues for us, we need:
         # n_fft >> n_mels as low value imply empty filter 
         # n_fft/2 <= sample_length -  skip_first_n
         n_fft = [max(cfg.loss.n_mels*4, w) for w in windows_length]
         scale = cfg.loss.spectrum
         if scale == 'stft':
             scale = None
+        w_log_mag = cfg.loss.get('w_log_mag','window')
+        if w_log_mag == "window":
+            w_log_mag = [math.sqrt(w/2) for w in windows_length]
         
-
-        spectral_loss = MultiResolutionSTFTLossWithScaling(
+        # norm convert "none" to None
+        norm=cfg.loss.get('norm', 'slaney')
+        if norm == 'none':
+            norm = None
+        spectral_loss = MultiResolutionSTFTLoss(
             fft_sizes=n_fft,
             win_lengths=windows_length,
             hop_sizes=windows_hops,
-            w_sc=0.0,
-            w_log_mag=[math.sqrt(w/2) for w in windows_length],
-            w_lin_mag=1.0,
-            w_phs=0.0,
+            w_sc=cfg.loss.get('w_sc', 0.0),
+            w_log_mag=w_log_mag,
+            w_lin_mag=cfg.loss.get('w_lin_mag', 1.0),
+            w_phs=cfg.loss.get('phase_loss_coef', 0.0),
             sample_rate=cfg.dataset.sampling_freq,
             scale=scale,
             # this is ignore if scale is None
             n_bins=cfg.loss.n_mels,
             perceptual_weighting=cfg.loss.get('perceptual_weighting', False),
             scale_invariance=cfg.loss.get('scale_invariance', False),
+            mag_distance=cfg.loss.get('mag_distance', "L1"),
+            mag_distance_log=cfg.loss.get('mag_distance_log', "L2"),
+            mel_scale=cfg.loss.get('mel_scale', 'slaney'),
+            norm=norm,
             )
 
         if cfg.loss.type == "mse_spectral":
