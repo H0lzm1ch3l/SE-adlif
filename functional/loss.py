@@ -126,10 +126,10 @@ class STFTLoss(torch.nn.Module):
                 assert sample_rate is not None  # Must set sample rate to use mel scale
                 assert n_bins <= fft_size  # Must be more FFT bins than Mel bins
                 fb = torchaudio.functional.melscale_fbanks(
-                    fft_size//2 + 1, sample_rate/win_length, 
-                    sample_rate/2, 
-                    n_bins, sample_rate, mel_scale=self.mel_scale,
-                    norm=self.norm).T.unsqueeze(0)
+                    n_freqs=fft_size//2 + 1, f_min=sample_rate/win_length, 
+                    f_max=sample_rate/2, 
+                    n_mels=n_bins, sample_rate=sample_rate, mel_scale=self.mel_scale,
+                    norm=self.norm)
 
             elif self.scale == "chroma":
                 assert sample_rate is not None  # Must set sample rate to use chroma scale
@@ -165,16 +165,15 @@ class STFTLoss(torch.nn.Module):
                 Magnitude and phase spectra (B, fft_size // 2 + 1, frames).
         """
         x_stft = torch.stft(
-            x,
-            self.fft_size,
-            self.hop_size,
-            self.win_length,
-            self.window,
+            input=x,
+            n_fft=self.fft_size,
+            hop_length=self.hop_size,
+            win_length=self.win_length,
+            window=self.window,
             return_complex=True,
+            onesided=True,
         )
-        x_mag = torch.sqrt(
-            torch.clamp((x_stft.real**2) + (x_stft.imag**2), min=self.eps)
-        )
+        x_mag = torch.clamp(x_stft.abs(), min=self.eps)
         x_phs = torch.angle(x_stft)
         return x_mag, x_phs
 
@@ -198,17 +197,17 @@ class STFTLoss(torch.nn.Module):
         self.window = self.window.to(input.device)
         x_mag, x_phs = self.stft(input.view(-1, input.size(-1)))
         y_mag, y_phs = self.stft(target.view(-1, target.size(-1)))
-
         # apply relevant transforms
         if self.scale is not None:
             self.fb = self.fb.to(input.device)
-            x_mag = torch.matmul(self.fb, x_mag)
-            y_mag = torch.matmul(self.fb, y_mag)
-
+            x_mag = torch.matmul(x_mag.transpose(-1, -2), self.fb).transpose(-1, -2)
+            # x_mag = torch.matmul(self.fb, x_mag)
+            # y_mag = torch.matmul(self.fb, y_mag)
+            y_mag = torch.matmul(y_mag.transpose(-1, -2), self.fb).transpose(-1, -2)
         # normalize scales
         if self.scale_invariance:
-            alpha = (x_mag * y_mag).sum([-2, -1]) / ((y_mag**2).sum([-2, -1]))
-            y_mag = y_mag * alpha.unsqueeze(-1)
+            alpha = (x_mag * y_mag).sum([-2, -1], keepdim=True) / ((y_mag**2).sum([-2, -1], keepdim=True))
+            y_mag = y_mag * alpha
 
         # compute loss terms
         sc_mag_loss = self.spectralconv(x_mag, y_mag) if self.w_sc else 0.0

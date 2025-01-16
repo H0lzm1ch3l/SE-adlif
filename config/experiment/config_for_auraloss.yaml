@@ -175,8 +175,8 @@ loss:
   w_phs: 0.0 # phase regression loss
   mag_distance: L1 # distance between spectral magnitude, L1 or L2, only used for w_lin_mag (L1 for soundstream)
   mag_distance_log: L2 # distance between log spectral magnitude, L1 or L2, only used for w_log_mag (L2 for soundstream)
-  mel_scale: slaney # slaney or htk
-  norm: 'slaney' # slaney or "none"
+  mel_scale: htk # slaney or htk
+  norm: none # slaney or "none"
   mse_loss_gain: 10.0 # how much weight put to the generative loss
   temp: 10.0 # temperature for Gumbel, higher value converge toward uniform distribution
   min_temp: 1.0
