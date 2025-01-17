@@ -137,6 +137,7 @@ def get_chunk_by_id(chunk_id, chunk_map, chunk_size, norm_func):
 norm_map = {
     "none": lambda x: x,
     "-1_1": lambda x: -1 + 2 * (x - torch.min(x)) / (torch.max(x) - torch.min(x)),
+    "peak": lambda x: x/torch.max(torch.abs(x)),
     "0_1": lambda x: (x - torch.min(x)) / (torch.max(x) - torch.min(x)),
     "standard": lambda x: (x - torch.mean(x)) / (torch.var(x) + 1e-9),
 }
