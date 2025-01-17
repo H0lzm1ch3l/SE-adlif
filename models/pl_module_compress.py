@@ -198,7 +198,7 @@ class GenerativeSpectralLoss(torch.nn.Module):
         self.temp = max(self.min_temp, self.temp_decay * self.temp)
 
     def generate_wave(self, outputs, hard=False):
-        probs = torch.nn.functional.gumbel_softmax(outputs, self.temp.item(), hard=hard)
+        probs = torch.softmax(outputs/self.temp.item(), -1)
         # 3. reconstructs from bins centers
         output_wave = self.de_quantize(probs)
         return output_wave
@@ -207,18 +207,17 @@ class GenerativeSpectralLoss(torch.nn.Module):
         # outputs is assumed to be logits of shape (B, T, N) with N = num_bins
         # 1. compute sparse cross entropy w.r.t next token prediction
         bin_indices = self.quantize(targets)
-        # next token prediction
+        soft_target =torch.softmax(-torch.square(bin_indices[:, 1:].unsqueeze(-1) - torch.arange(self.num_bins, device=outputs.device, dtype=torch.long).view(1, 1, -1))/self.temp.item(), dim=-1)
+        # next token prediction        
         loss_gen = self.gen_loss(
-            outputs[:, :-1].reshape(-1, self.num_bins), bin_indices[:, 1:].reshape(-1)
+            outputs[:, :-1].reshape(-1, self.num_bins), soft_target.reshape(-1, self.num_bins)
         )
         # 2. Compute differentiable sample using Gumbel softmax reparametrization trick on categorical distribution
         # hard = True will return one-hot vector, we want something softer
         # temp is softmax temperature
         # temp -> +inf => probs is uniform, tmp-> 0, probs is pure categorical distribution (one-hot)
         # probs always sum to 1
-        probs = torch.nn.functional.gumbel_softmax(
-            outputs, self.temp.item(), hard=False
-        )
+        probs = torch.softmax(outputs/self.temp.item(), -1)
         # 3. reconstructs quantized vector from convex sum of bins centers
         output_wave = self.de_quantize(probs)
         # 4. compute spectral loss, recall that output_wave is the next step prediction

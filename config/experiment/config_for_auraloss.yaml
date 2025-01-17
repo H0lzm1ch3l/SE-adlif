@@ -177,10 +177,10 @@ loss:
   mag_distance_log: L1 # distance between log spectral magnitude, L1 or L2, only used for w_log_mag (L2 for soundstream)
   mel_scale: htk # slaney or htk
   norm: none # slaney or "none"
-  mse_loss_gain: 10.0 # how much weight put to the generative loss
+  mse_loss_gain: 1.0 # how much weight put to the generative loss
   temp: 10.0 # temperature for Gumbel, higher value converge toward uniform distribution
   min_temp: 1.0
-  temp_decay: 0.95
+  temp_decay: 0.98
   discretization: 'log'
   spectrum: "mel" # stft, mel, chroma
   perceptual_weighting: False # determine if we perform a A-weighting https://en.wikipedia.org/wiki/A-weighting
@@ -189,8 +189,8 @@ loss:
 
 
 # regularization parameters
-min_spike_prob: [0.1, 0.005, 0.1, 0.1] # , 0.1]
-max_spike_prob: [0.6, 0.02, 0.6, 0.6] #, 0.2]
+min_spike_prob: [0.2, 0.005, 0.2, 0.2] # , 0.1]
+max_spike_prob: [0.7, 0.02, 0.7, 0.7] #, 0.2]
 min_layer_coeff: [10.0, 10.0, 10.0, 10.0] #, 10.0] # encourage the first layer to spike
 max_layer_coeff: [1.0, 1000, 1.0, 1.0] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
 compile: True
