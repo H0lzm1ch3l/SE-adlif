@@ -11,7 +11,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from functional.loss import (
-    MultiScaleMelSpetroLoss,
+    MultiResolutionSTFTLoss,
     get_per_layer_spike_probs,
     snn_regularization,
 )
@@ -22,7 +22,7 @@ from models.li import LI
 from models.sli import SLI
 from models.lif import LIF
 from models.rnn import LSTMCellWrapper
-from functional.stft_loss import STFTLoss, MultiResolutionSTFTLoss
+
 
 # from models.sli import SLI
 torch.autograd.set_detect_anomaly(True)
@@ -198,7 +198,7 @@ class GenerativeSpectralLoss(torch.nn.Module):
         self.temp = max(self.min_temp, self.temp_decay * self.temp)
 
     def generate_wave(self, outputs, hard=False):
-        probs = torch.nn.functional.gumbel_softmax(outputs, self.temp, hard=hard)
+        probs = torch.softmax(outputs/self.temp.item(), -1)
         # 3. reconstructs from bins centers
         output_wave = self.de_quantize(probs)
         return output_wave
@@ -207,22 +207,22 @@ class GenerativeSpectralLoss(torch.nn.Module):
         # outputs is assumed to be logits of shape (B, T, N) with N = num_bins
         # 1. compute sparse cross entropy w.r.t next token prediction
         bin_indices = self.quantize(targets)
-        # next token prediction
+        soft_target =torch.softmax(-torch.square(bin_indices[:, 1:].unsqueeze(-1) - torch.arange(self.num_bins, device=outputs.device, dtype=torch.long).view(1, 1, -1))/self.temp.item(), dim=-1)
+        # next token prediction        
         loss_gen = self.gen_loss(
-            outputs[:, :-1].reshape(-1, self.num_bins), bin_indices[:, 1:].reshape(-1)
+            outputs[:, :-1].reshape(-1, self.num_bins), soft_target.reshape(-1, self.num_bins)
         )
         # 2. Compute differentiable sample using Gumbel softmax reparametrization trick on categorical distribution
         # hard = True will return one-hot vector, we want something softer
         # temp is softmax temperature
         # temp -> +inf => probs is uniform, tmp-> 0, probs is pure categorical distribution (one-hot)
         # probs always sum to 1
-        probs = torch.nn.functional.gumbel_softmax(
-            outputs, self.temp.item(), hard=False
-        )
+        probs = torch.softmax(outputs/self.temp.item(), -1)
         # 3. reconstructs quantized vector from convex sum of bins centers
         output_wave = self.de_quantize(probs)
         # 4. compute spectral loss, recall that output_wave is the next step prediction
-        loss_spectral = self.spectral_loss(output_wave[:, :-1], targets[:, 1:])
+        # spectral loss expect (B, C, T) with C channel dim (in our case C=1)
+        loss_spectral = self.spectral_loss(output_wave[:, :-1].permute((0,2,1)), targets[:, 1:].permute((0,2,1)))
         return self.gen_loss_gain * loss_gen + self.spectral_loss_gain * loss_spectral
 
 
@@ -273,16 +273,52 @@ class MLPSNN(pl.LightningModule):
         self.output_func = cfg.get("loss_agg", "softmax")
         self.init_metrics_and_loss()
         self.save_hyperparameters()
+        
+        windows_length = [2**i for i in range(cfg.loss.min_window, cfg.loss.max_window+1)]
+        windows_hops = [w//4 for w in windows_length]
 
-        if cfg.loss.spectrum == "mel":
-            spectral_loss = MultiScaleMelSpetroLoss(
-                cfg.dataset.sampling_freq,
-                cfg.loss.n_mels,
-                cfg.loss.min_window,
-                cfg.loss.max_window,
+        # this is pretty standard that n_fft = windows_length, 
+        # if n_fft < windows_length we loose information
+        # if n_fft > windows_length the frequencies are oversampled/interpolated, 
+        # As the delta freq = sampling_freq/win_length,
+        # Audio framework recommands:
+        # n_fft = windows_length*2**i
+        # https://support.ircam.fr/docs/AudioSculpt/3.0/co/FFT%20Size.html
+        # Issues for us, we need:
+        # n_fft >> n_mels as low value imply empty filter 
+        # n_fft/2 <= sample_length -  skip_first_n
+        n_fft = [2**cfg.loss.max_window for w in windows_length]
+        scale = cfg.loss.spectrum
+        if scale == 'stft':
+            scale = None
+        w_log_mag = cfg.loss.get('w_log_mag','window')
+        if w_log_mag == "window":
+            w_log_mag = [math.sqrt(w/2) for w in windows_length]
+        
+        # norm convert "none" to None
+        norm=cfg.loss.get('norm', 'slaney')
+        if norm == 'none':
+            norm = None
+        spectral_loss = MultiResolutionSTFTLoss(
+            fft_sizes=n_fft,
+            win_lengths=windows_length,
+            hop_sizes=windows_hops,
+            w_sc=cfg.loss.get('w_sc', 0.0),
+            w_log_mag=w_log_mag,
+            w_lin_mag=cfg.loss.get('w_lin_mag', 1.0),
+            w_phs=cfg.loss.get('phase_loss_coef', 0.0),
+            sample_rate=cfg.dataset.sampling_freq,
+            scale=scale,
+            # this is ignore if scale is None
+            n_bins=cfg.loss.n_mels,
+            perceptual_weighting=cfg.loss.get('perceptual_weighting', False),
+            scale_invariance=cfg.loss.get('scale_invariance', False),
+            mag_distance=cfg.loss.get('mag_distance', "L1"),
+            mag_distance_log=cfg.loss.get('mag_distance_log', "L2"),
+            mel_scale=cfg.loss.get('mel_scale', 'slaney'),
+            norm=norm,
             )
-        elif cfg.loss.spectrum == "stft":
-            spectral_loss = MultiResolutionSTFTLoss()
+
         if cfg.loss.type == "mse_spectral":
             self.loss = CompositeLoss(
                 spectral_loss,
@@ -407,7 +443,8 @@ class MLPSNN(pl.LightningModule):
         )
         self.log(
             f"{prefix}spectral_loss",
-            self.loss.spectral_loss(outputs, targets),
+            # spectral loss expect (B, C, T) with C channel dim (in our case C=1)
+            self.loss.spectral_loss(outputs.permute((0,2,1)), targets.permute((0,2,1))),
             prog_bar=True,
             on_epoch=True,
             on_step=True if prefix == "train_" else False,
