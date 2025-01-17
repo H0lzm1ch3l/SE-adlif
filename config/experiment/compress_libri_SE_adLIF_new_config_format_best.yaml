@@ -1,0 +1,189 @@
+# @package _global_
+
+defaults:
+  - /dataset: compress_libri
+
+enc_l1_neurons: 300
+enc_l2_neurons: 300
+dec_l1_neurons: 300
+dec_l2_neurons: 300
+dec_lout_neurons: 256
+bottleneck_neurons: 16
+main_a_range: [0, 5]
+main_b_range: [0, 2]
+main_tau_u_range: [5, 25]
+main_tau_w_range: [35, 300]
+
+main_q: 120
+ # adlif step function: 
+ #    "cos" reparametized "a" adapt parameter in terms of cos(w), with trainable w 
+ #    "linear" standard step function 
+step_type: linear
+tau_training: interpolationExpSigmoid
+exp_name: compres_libri_SE_adLIF
+unroll_factor: 128
+encoder:
+  dropout: 0.0
+  l1:
+    # input size 
+    cell: se_adlif
+    input_size: 1
+    n_neurons: ${enc_l1_neurons}
+    use_recurrent: False
+    thr: 1.0
+    # gain for feedforward weight initialization
+    ff_gain: 1.0
+    # Range of tau_u
+    tau_u_range: ${main_tau_u_range}
+    # Range of tau_w
+    tau_w_range: ${main_tau_w_range}
+    a_range: ${main_a_range}
+    b_range: ${main_b_range}
+    q: ${main_q}
+    use_u_rest: True
+    train_u0: True
+    train_thr: False
+    step_type:  ${step_type}
+    compile: True
+    train_tau: ${tau_training}
+    unroll: ${unroll_factor}
+  l2:
+    cell: se_adlif
+    input_size: ${enc_l1_neurons}
+    n_neurons: ${enc_l2_neurons}
+    use_recurrent: True
+    thr: 1.0
+    # gain for feedforward weight initialization
+    ff_gain: 1.0
+    # Range of tau_u
+    tau_u_range: ${main_tau_u_range}
+    # Range of tau_w
+    tau_w_range: ${main_tau_w_range}
+    a_range: ${main_a_range}
+    b_range: ${main_b_range}
+    q: ${main_q}
+    num_out_neuron: ${bottleneck_neurons}
+    use_u_rest: True
+    train_u0: True
+    train_thr: False
+    step_type:  ${step_type}
+    unroll: ${unroll_factor}
+    train_tau: ${tau_training}
+    compile: True
+decoder:
+  dropout: 0.0
+  light_decoder: False
+  l1:
+    cell: se_adlif
+    input_size: ${bottleneck_neurons}
+    n_neurons: ${dec_l1_neurons}
+    use_recurrent: True
+    thr: 1.0
+    # gain for feedforward weight initialization
+    ff_gain: 1.0
+    # Range of tau_u
+    tau_u_range: ${main_tau_u_range}
+    # Range of tau_w
+    tau_w_range: ${main_tau_w_range}
+    a_range: ${main_a_range}
+    b_range: ${main_b_range}
+    q: ${main_q}
+    use_u_rest: True
+    train_u0: True
+    train_thr: False
+    unroll: ${unroll_factor}
+    step_type: ${step_type}
+    train_tau: ${tau_training}
+    compile: True
+  l2:
+    cell: se_adlif
+    input_size: ${dec_l1_neurons}
+    n_neurons: ${dec_l2_neurons}
+    use_recurrent: True
+    thr: 1.0
+    # gain for feedforward weight initialization
+    ff_gain: 1.0
+    # Range of tau_u
+    tau_u_range: ${main_tau_u_range}
+    # Range of tau_w
+    tau_w_range: ${main_tau_w_range}
+    a_range:  ${main_a_range}
+    b_range: ${main_b_range}
+    q: ${main_q}
+    use_u_rest: True
+    train_u0: True
+    train_thr: False
+    unroll: ${unroll_factor}
+    step_type: ${step_type}
+    train_tau: ${tau_training}
+    compile: True
+  l_out:
+    cell: li
+    input_size: ${dec_l2_neurons}
+    use_recurrent: False
+
+    n_neurons: ${dec_lout_neurons}
+    reduce: 'mean' # perform reduce operation on the n_neurons dim (none, mean, sum)
+    # when using the nll loss reduce is set to none
+    # Time constant of output layer 
+    train_tau_u_method: ${tau_training}
+    tau_u_range: [1, 10]
+    train_thr: False
+    unroll: ${unroll_factor}
+    compile: True
+
+
+# Parameters of SLAYER
+alpha: 10.0
+c: 0.4
+thr: 1.0
+dt: 1.0
+
+# Number of epochs
+n_epochs: -1
+
+
+# Metric tracking
+tracking_metric: val_loss
+tracking_mode: min
+
+# optimizer parameters
+# learning rate of the optimizer
+lr: 0.005
+factor: 0.9
+patience: 5
+min_lr: 1e-5
+
+grad_norm: 10
+
+# warm start, the lr is fixed at fast_epoch_lr_factor*lr for the first num_fast_epoch
+num_fast_epoch: 0
+fast_epoch_lr_factor: 10
+skip_first_n: 50
+loss:
+  type: nll_spectral # mse_spectral, nll_spectral (generative loss), spectral (only spectral)
+  # Spectral loss parameters (cf. https://arxiv.org/abs/2008.01160)
+  n_mels: 64 # number of bins in the mel-scale spectrogram (this is the features dimension of the spectrogram)
+  min_window: 6 # min size of the FFT windows in power of two 
+  max_window: 9 # max size of the FTT windows in power of two
+  spectral_loss_gain: 1.0
+  mse_loss_gain: 10.0 # this is reused for the generative loss gain
+  temp: 10.0 # temperature for Gumbel, higher value converge toward uniform distribution
+  min_temp: 1.0
+  temp_decay: 0.95
+  discretization: 'log'
+  spectrum: "mel" # stft, mel, chroma
+  perceptual_weighting: False # determine if we perform a A-weighting https://en.wikipedia.org/wiki/A-weighting
+  scale_invariance: False
+
+
+
+# regularization parameters
+min_spike_prob: [0.1, 0.005, 0.1, 0.1] # , 0.1]
+max_spike_prob: [0.6, 0.02, 0.6, 0.6] #, 0.2]
+min_layer_coeff: [10.0, 10.0, 10.0, 10.0] #, 10.0] # encourage the first layer to spike
+max_layer_coeff: [1.0, 1000, 1.0, 1.0] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
+compile: True
+check_val_every_n_epoch: 1
+
+random_seed: 42

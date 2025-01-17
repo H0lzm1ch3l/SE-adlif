@@ -11,6 +11,8 @@ results/
 results/*
 .vscode/
 
+*.wav
+
 # Distribution / packaging
 .Python
 build/

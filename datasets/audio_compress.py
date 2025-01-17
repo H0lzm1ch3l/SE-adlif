@@ -137,6 +137,7 @@ def get_chunk_by_id(chunk_id, chunk_map, chunk_size, norm_func):
 norm_map = {
     "none": lambda x: x,
     "-1_1": lambda x: -1 + 2 * (x - torch.min(x)) / (torch.max(x) - torch.min(x)),
+    "peak": lambda x: x/torch.max(torch.abs(x)),
     "0_1": lambda x: (x - torch.min(x)) / (torch.max(x) - torch.min(x)),
     "standard": lambda x: (x - torch.mean(x)) / (torch.var(x) + 1e-9),
 }
@@ -147,7 +148,6 @@ class LibriTTS(Dataset):
         self,
         save_to: str,
         cache_path: str = None,
-        max_sample: int = -1,
         sampling_freq: int = 24_000,
         sample_length: int = -1,
         normalization: str = "none",
@@ -218,14 +218,9 @@ class LibriTTS(Dataset):
         print(f"Waves files are splited into {sample_length} samples length")
         self.sample_length = sample_length
         self.sampling_freq = sampling_freq
-        self.max_sample = max_sample
 
     def __len__(self):
-        return (
-            self.num_samples
-            if self.max_sample == -1
-            else min(self.num_samples, self.max_sample)
-        )
+        return self.num_samples
 
     def __getitem__(self, index):
         inputs: torch.Tensor = get_chunk_by_id(
@@ -255,8 +250,6 @@ class CompressLibri(pl.LightningDataModule):
     sensible value would max_freq > 2*pi*sqrt(max(K)/min(M)),
     the maximal possible harmonic frequency of one spring-mass system in isolation.
     where K and M are the spring and mass coefficients.
-
-
     """
 
     def __init__(
@@ -282,6 +275,8 @@ class CompressLibri(pl.LightningDataModule):
         self.fits_into_ram = fits_into_ram
         self.collate_fn = PadTensors(require_padding=False)
         self.normalization = normalization
+        self.max_sample = max_sample
+        
         if not os.path.isabs(data_path):
             cwd = hydra.utils.get_original_cwd()
             data_path = os.path.abspath(os.path.join(cwd, data_path))
@@ -289,7 +284,6 @@ class CompressLibri(pl.LightningDataModule):
         self.train_dataset_ = LibriTTS(
             save_to=data_path + "/LibriTTS",
             cache_path=cache_path + "/LibriTTS",
-            max_sample=max_sample,
             sampling_freq=sampling_freq,
             sample_length=sample_length,
             normalization=normalization,
@@ -301,6 +295,7 @@ class CompressLibri(pl.LightningDataModule):
             cache_path
             + f"/LibriTTS_hz-{sampling_freq}_sl-{sample_length}_norm-{normalization}"
         )
+        
 
         def delay_transform(inputs, targets, block_idx):
             # add zero padding to account for possible prediciton delay
@@ -333,9 +328,9 @@ class CompressLibri(pl.LightningDataModule):
             full_transform=compose_full_transform
         )
         n_sample = len(self.train_dataset_)
-        # always aim for 7*batch_size samples per valid and test set rest is train set
+        # always aim for 10*batch_size samples per valid and test set rest is train set
         # this prevents that too much data is used for validation when the dataset is very large
-        i = 7
+        i = 10
         while i > 1 and n_sample - 2*batch_size*i < 0:
             i -= 1
             
@@ -346,6 +341,12 @@ class CompressLibri(pl.LightningDataModule):
                 generator=None,
             )
         )
+        # create a sampler for self.train_dataset, that randomly sub-sample "self.max_sample" samples from
+        # the total dataset length, this is not required if self.max_sample = -1 (total dataset)
+        if self.max_sample != -1:
+            self.train_sampler = torch.utils.data.RandomSampler(self.train_dataset_, replacement=False, num_samples=self.max_sample)
+        else:
+            self.train_sampler = None
 
     def prepare_data(self):
         pass
@@ -360,7 +361,8 @@ class CompressLibri(pl.LightningDataModule):
     def train_dataloader(self):
         return DataLoader(
             self.data_train,
-            shuffle=True,
+            sampler=self.train_sampler,
+            shuffle=False,
             pin_memory=True,
             batch_size=self.batch_size,
             drop_last=True,
