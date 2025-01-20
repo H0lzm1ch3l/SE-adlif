@@ -21,7 +21,7 @@ main_q: 120
 step_type: linear
 tau_training: interpolationExpSigmoid
 exp_name: compres_libri_SE_adLIF
-unroll_factor: 128
+unroll_factor: 256
 encoder:
   dropout: 0.0
   l1:
@@ -163,9 +163,9 @@ skip_first_n: 50
 loss:
   type: nll_spectral # mse_spectral, nll_spectral (generative loss), spectral (only spectral)
   # Spectral loss parameters (cf. https://arxiv.org/abs/2008.01160)
-  n_mels: 64 # number of bins in the mel-scale spectrogram (this is the features dimension of the spectrogram)
+  n_mels: 128 # number of bins in the mel-scale spectrogram (this is the features dimension of the spectrogram)
   min_window: 6 # min size of the FFT windows in power of two 
-  max_window: 10 # max size of the FTT windows in power of two
+  max_window: 11 # max size of the FTT windows in power of two
   spectral_loss_gain: 1.0
   # the total loss have 4 part represented by their weighting coefficient
   # w_sc, w_log_mag, w_lin_mag, w_phs, soundstream loss use w_lin_mag: 1.0 and w_lin_mag: window
@@ -177,7 +177,7 @@ loss:
   mag_distance_log: L1 # distance between log spectral magnitude, L1 or L2, only used for w_log_mag (L2 for soundstream)
   mel_scale: htk # slaney or htk
   norm: none # slaney or "none"
-  mse_loss_gain: 1.0 # how much weight put to the generative loss
+  mse_loss_gain: 10.0 # how much weight put to the generative loss
   temp: 10.0 # temperature for Gumbel, higher value converge toward uniform distribution
   min_temp: 1.0
   temp_decay: 0.95
@@ -192,7 +192,7 @@ loss:
 min_spike_prob: [0.05, 0.005, 0.05, 0.05] # , 0.1]
 max_spike_prob: [0.7, 0.02, 0.7, 0.7] #, 0.2]
 min_layer_coeff: [10.0, 10.0, 10.0, 10.0] #, 10.0] # encourage the first layer to spike
-max_layer_coeff: [10.0, 1000, 10.0, 10.0] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
+max_layer_coeff: [10.0, 100, 10.0, 10.0] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
 compile: True
 check_val_every_n_epoch: 1
 
