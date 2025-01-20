@@ -38,6 +38,8 @@ class LI(Module):
         self.dt = cfg.get('dt', 1.0)
         self.tau_u_range = cfg.tau_u_range
         self.train_tau_u_method = cfg.get('train_tau_u_method', 'fixed')
+        self.ff_gain = cfg.get('ff_gain', 1.0)
+        
         
         self.weight = Parameter(
             torch.empty((self.out_features, self.in_features), **factory_kwargs)
@@ -79,8 +81,8 @@ class LI(Module):
         self.tau_u_trainer.reset_parameters()
         torch.nn.init.uniform_(
             self.weight,
-            -1 * torch.sqrt(1 / torch.tensor(self.in_features)),
-            torch.sqrt(1 / torch.tensor(self.in_features)),
+            -self.ff_gain  * torch.sqrt(1 / torch.tensor(self.in_features)),
+            self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
         )
         torch.nn.init.zeros_(self.bias)
 
