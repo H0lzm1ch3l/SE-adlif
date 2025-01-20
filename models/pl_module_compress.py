@@ -6,6 +6,9 @@ from torch.nn import CrossEntropyLoss, MSELoss
 from omegaconf import DictConfig, open_dict
 from pytorch_lightning.utilities import grad_norm
 import matplotlib
+import torchmetrics.audio
+
+from functional.metrics import MeanSquaredErrorFlat
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -367,7 +370,7 @@ class MLPSNN(pl.LightningModule):
     def on_train_batch_end(self, outputs, batch, batch_idx: int):
         self.model.apply_parameter_constraints()
 
-    def process_predictions_and_compute_losses(self, outputs, targets, block_idx):
+    def process_predictions_and_compute_losses(self, outputs, targets):
         """
         Process the model output into prediction
         with respect to the temporal segmentation defined by the
@@ -389,10 +392,10 @@ class MLPSNN(pl.LightningModule):
         loss = self.loss(
             outputs[:, self.skip_first_n + self.prediction_delay :], targets
         )
-        block_idx = block_idx[:, self.prediction_delay :].unsqueeze(-1)
-        outputs_reduce = outputs[:, self.skip_first_n + self.prediction_delay :]
+        # block_idx = block_idx[:, self.prediction_delay :].unsqueeze(-1)
+        # outputs_reduce = outputs[:, self.skip_first_n + self.prediction_delay :]
 
-        return (outputs_reduce, loss, block_idx)
+        return loss
 
     def update_and_log_metrics(
         self,
@@ -421,13 +424,13 @@ class MLPSNN(pl.LightningModule):
         """
         targets = targets[:, 1 + self.skip_first_n :]
 
-        # outputs = outputs[:, self.prediction_delay :]
+        outputs = outputs[:, self.skip_first_n + self.prediction_delay :]
         if isinstance(self.loss, GenerativeSpectralLoss):
             outputs = self.loss.generate_wave(outputs)
-        outputs_flat = outputs.reshape(-1, outputs.shape[-1])
-        targets_flat = targets.reshape(-1, targets.shape[-1])
+        # outputs_flat = outputs.reshape(-1, outputs.shape[-1])
+        # targets_flat = targets.reshape(-1, targets.shape[-1])
 
-        metrics(outputs_flat, targets_flat)
+        metrics(outputs[:,:-1].permute((0,2,1))[:,0], targets[:, 1:].permute((0,2,1))[:,0])
         self.log_dict(
             metrics,
             prog_bar=True,
@@ -444,7 +447,7 @@ class MLPSNN(pl.LightningModule):
         self.log(
             f"{prefix}spectral_loss",
             # spectral loss expect (B, C, T) with C channel dim (in our case C=1)
-            self.loss.spectral_loss(outputs.permute((0,2,1)), targets.permute((0,2,1))),
+            self.loss.spectral_loss(outputs[:,:-1].permute((0,2,1)), targets[:, 1:].permute((0,2,1))),
             prog_bar=True,
             on_epoch=True,
             on_step=True if prefix == "train_" else False,
@@ -461,14 +464,9 @@ class MLPSNN(pl.LightningModule):
         outputs = self(
             inputs,
         )
-
-        (
-            outputs_reduce,
-            loss,
-            block_idx,
-        ) = self.process_predictions_and_compute_losses(outputs, targets, block_idx)
+        loss = self.process_predictions_and_compute_losses(outputs, targets)
         self.update_and_log_metrics(
-            outputs_reduce,
+            outputs,
             targets,
             loss,
             self.train_metric,
@@ -528,14 +526,10 @@ class MLPSNN(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         inputs, targets, block_idx = batch
         states, outputs = self.forward_with_states(inputs)
-        (
-            outputs_reduce,
-            loss,
-            block_idx,
-        ) = self.process_predictions_and_compute_losses(outputs, targets, block_idx)
+        loss = self.process_predictions_and_compute_losses(outputs, targets)
 
         self.update_and_log_metrics(
-            outputs_reduce,
+            outputs,
             targets,
             loss,
             self.val_metric,
@@ -543,6 +537,7 @@ class MLPSNN(pl.LightningModule):
         )
 
         if batch_idx == 0:
+            block_idx = block_idx[:, self.prediction_delay :].unsqueeze(-1)
             tmp_block_idx = block_idx.clone()
             tmp_block_idx[:, : self.skip_first_n, :] = 0
             # determine a random example to visualized
@@ -621,15 +616,10 @@ class MLPSNN(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         inputs, targets, block_idx = batch
         outputs = self.forward(inputs)
-
-        (
-            outputs_reduce,
-            loss,
-            block_idx,
-        ) = self.process_predictions_and_compute_losses(outputs, targets, block_idx)
+        loss = self.process_predictions_and_compute_losses(outputs, targets)
 
         self.update_and_log_metrics(
-            outputs_reduce,
+            outputs,
             targets,
             loss,
             self.test_metric,
@@ -641,9 +631,11 @@ class MLPSNN(pl.LightningModule):
     def init_metrics_and_loss(self):
         metrics = torchmetrics.MetricCollection(
             {
-                "mse": torchmetrics.MeanSquaredError(),
+                "mse": MeanSquaredErrorFlat(),
+                "si_snr": torchmetrics.audio.ScaleInvariantSignalNoiseRatio(),
             }
         )
+        
 
         self.train_metric = metrics.clone(prefix="train_")
         self.val_metric = metrics.clone(prefix="val_")
