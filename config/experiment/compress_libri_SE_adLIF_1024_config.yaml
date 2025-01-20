@@ -29,7 +29,7 @@ encoder:
     cell: se_adlif
     input_size: 1
     n_neurons: ${enc_l1_neurons}
-    use_recurrent: True
+    use_recurrent: False
     thr: 1.0
     # gain for feedforward weight initialization
     ff_gain: 1.0
@@ -152,7 +152,7 @@ tracking_mode: min
 lr: 0.0005
 factor: 0.9
 patience: 0
-min_lr: 1e-5
+min_lr: 1e-7
 
 grad_norm: 10
 
@@ -192,7 +192,7 @@ loss:
 min_spike_prob: [0.05, 0.005, 0.05, 0.05] # , 0.1]
 max_spike_prob: [0.7, 0.02, 0.7, 0.7] #, 0.2]
 min_layer_coeff: [10.0, 10.0, 10.0, 10.0] #, 10.0] # encourage the first layer to spike
-max_layer_coeff: [0.0, 1000, 1.0, 0.0] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
+max_layer_coeff: [10.0, 1000, 10.0, 10.0] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
 compile: True
 check_val_every_n_epoch: 1
 
