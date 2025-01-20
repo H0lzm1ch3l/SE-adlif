@@ -453,7 +453,8 @@ def snn_regularization(spike_proba_per_layer: list[torch.Tensor], target: Union[
         NotImplementedError: Raise error if reg_type is unknown 
 
     Returns:
-        torch.Tensor: the regularization loss averaged over the total numbers of neurons 
+        torch.Tensor: the regularization loss 
+        dict[str, torch.Tensor] a dictionary of layer_id -> regularization_value for logging 
     """
     if isinstance(target, float):
         target = [target,] * len(spike_proba_per_layer)
