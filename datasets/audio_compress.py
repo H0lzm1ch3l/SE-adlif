@@ -59,24 +59,24 @@ def copy_wave_files_with_path_names(root_path, destination_path):
         shutil.copy2(wav_file, destination_file)
 
 
-def process_resampling(wav_file, output_path, target_sample_rate):
+def process_resampling_and_normalize(wav_file, output_path, target_sample_rate, norm_func):
     # Load the audio file
     waveform, sample_rate = torchaudio.load(wav_file)
 
     with torch.no_grad():
-        resampler = torchaudio.transforms.Resample(
-            orig_freq=sample_rate, new_freq=target_sample_rate
+        waveform = torchaudio.functional.resample(
+            waveform, orig_freq=sample_rate, new_freq=target_sample_rate,
+            resampling_method='sinc_interp_kaiser'
         )
-        waveform = resampler(waveform)
-
+        waveform = norm_func(waveform)
     # Define the output file path (same name as the original)
     output_file = output_path / wav_file.name
 
     # Save the resampled audio to the output path
-    torchaudio.save(output_file, waveform, target_sample_rate)
+    torchaudio.save(output_file, waveform, target_sample_rate, encoding="PCM_S", bits_per_sample=16)
 
 
-def resample_and_save_wav_files(input_path, output_path, base_freq, new_freq):
+def resample_normalize_and_save_wav_files(input_path, output_path, base_freq, new_freq, norm_func):
     # Ensure the output directory exists
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -86,7 +86,7 @@ def resample_and_save_wav_files(input_path, output_path, base_freq, new_freq):
     # Use multiprocessing to speed up the process
     with ThreadPoolExecutor() as executor:
         futures = [
-            executor.submit(process_resampling, wav_file, output_path, new_freq)
+            executor.submit(process_resampling_and_normalize, wav_file, output_path, new_freq, norm_func)
             for wav_file in wav_files
         ]
         # Wait for all futures to complete
@@ -119,19 +119,23 @@ def create_chunk_map(file_paths, chunk_size):
 
     return chunk_map
 
-
 def get_chunk_by_id(chunk_id, chunk_map, chunk_size, norm_func):
     wav_file, start_sample = chunk_map[chunk_id]
-    # Load the waveform for this file
-    waveform, sample_rate = torchaudio.load(wav_file)
-    waveform = norm_func(waveform)
-    if chunk_size == -1:
-        return waveform
-    # Extract the chunk
-    end_sample = start_sample + chunk_size
-    chunk = waveform[:, start_sample:end_sample]
 
-    return chunk
+    # Determine the number of frames (samples) to load
+    if chunk_size == -1:
+        # If chunk_size == -1, load the entire file
+        waveform, sample_rate = torchaudio.load(wav_file)
+        return waveform
+
+    # Use torchaudio.load to load only the chunk
+    waveform, sample_rate = torchaudio.load(
+        wav_file,
+        frame_offset=start_sample,
+        num_frames=chunk_size
+    )
+    return waveform
+
 
 
 norm_map = {
@@ -155,6 +159,7 @@ class LibriTTS(Dataset):
         debug: bool = True,
         transform=None,
         target_transform=None,
+        full_transform=None,
         get_metadata: bool = False,
     ):
         # libriTTS stucture {saveto}/user_id/chapter_id
@@ -174,6 +179,7 @@ class LibriTTS(Dataset):
             raise Exception(f"Path {try_path} does not exist")
         self.transform = transform
         self.target_transform = target_transform
+        self.full_transform = full_transform
         self.get_metadata = get_metadata
         self.norm_type = normalization
         self.norm_func = norm_map[normalization]
@@ -184,9 +190,10 @@ class LibriTTS(Dataset):
             split = "train" if train else "test"
         full_split = split + "/24000"
         freq_split = split + f"/{sampling_freq}"
+        freq_split += f"_{self.norm_type}"
         full_split_dir = self.cache_path / full_split
         freq_split_dir = self.cache_path / freq_split
-        if (full_split_dir).exists() and any((freq_split_dir).iterdir()):
+        if (full_split_dir).exists() and any((full_split_dir).iterdir()):
             print("directory already exist")
         else:
             # for now only get debug
@@ -198,13 +205,11 @@ class LibriTTS(Dataset):
                 raise NotImplementedError("Only debug is implemented for now")
         # 24_000/full split exist
 
-        if sampling_freq != 24_000 and (
-            not freq_split_dir.exists() or not any(full_split_dir.iterdir())
-        ):
+        if not freq_split_dir.exists() or not any(freq_split_dir.iterdir()):
             # resample
             print(f"Resample wave file from 24kHz to {sampling_freq}Hz")
-            resample_and_save_wav_files(
-                full_split_dir, freq_split_dir, 24_000, sampling_freq
+            resample_normalize_and_save_wav_files(
+                full_split_dir, freq_split_dir, 24_000, sampling_freq, norm_func=self.norm_func
             )
         print(f"Wave files are resampled to {sampling_freq}Hz")
         self.wave_files_path = list(freq_split_dir.rglob("*.wav"))
@@ -232,6 +237,8 @@ class LibriTTS(Dataset):
             inputs = self.transform(inputs)
         if self.target_transform is not None:
             targets = self.target_transform(targets)
+        if self.full_transform is not None:
+            inputs, targets, block_idx = self.full_transform(inputs, targets, block_idx)
         if self.get_metadata:
             return inputs, targets, block_idx, {}
         else:
@@ -281,22 +288,6 @@ class CompressLibri(pl.LightningDataModule):
             cwd = hydra.utils.get_original_cwd()
             data_path = os.path.abspath(os.path.join(cwd, data_path))
 
-        self.train_dataset_ = LibriTTS(
-            save_to=data_path + "/LibriTTS",
-            cache_path=cache_path + "/LibriTTS",
-            sampling_freq=sampling_freq,
-            sample_length=sample_length,
-            normalization=normalization,
-            debug=True,
-            transform=None,
-            target_transform=None,
-        )
-        self.cache_path = (
-            cache_path
-            + f"/LibriTTS_hz-{sampling_freq}_sl-{sample_length}_norm-{normalization}"
-        )
-        
-
         def delay_transform(inputs, targets, block_idx):
             # add zero padding to account for possible prediciton delay
             # idea is that it is potentially complex for the model to predict
@@ -312,21 +303,39 @@ class CompressLibri(pl.LightningDataModule):
             )
             block_idx = torch.ones((inputs.shape[0],), dtype=torch.int32)
             return inputs, targets, block_idx
-        def zero_inputs(inputs, targets, block_idx):
-            rd = torch.rand(()).item()
-            if rd < zero_input_proba:
-                inputs = torch.zeros_like(inputs)
-                targets = torch.zeros_like(targets)
-            return inputs, targets, block_idx
-        def compose_full_transform(inputs, targets, block_idx):
-            inputs, targets, block_idx = delay_transform(inputs, targets, block_idx)
-            return zero_inputs(inputs, targets, block_idx)
 
-        self.train_dataset_ = DiskCachedDataset(
-            self.train_dataset_,
-            cache_path=self.cache_path,
-            full_transform=compose_full_transform
+        self.train_dataset_ = LibriTTS(
+            save_to=data_path + "/LibriTTS",
+            cache_path=cache_path + "/LibriTTS",
+            sampling_freq=sampling_freq,
+            sample_length=sample_length,
+            normalization=normalization,
+            debug=True,
+            transform=None,
+            target_transform=None,
+            full_transform=delay_transform,
         )
+        # self.cache_path = (
+        #     cache_path
+        #     + f"/LibriTTS_hz-{sampling_freq}_sl-{sample_length}_norm-{normalization}"
+        # )
+        
+
+        # def zero_inputs(inputs, targets, block_idx):
+        #     rd = torch.rand(()).item()
+        #     if rd < zero_input_proba:
+        #         inputs = torch.zeros_like(inputs)
+        #         targets = torch.zeros_like(targets)
+        #     return inputs, targets, block_idx
+        # def compose_full_transform(inputs, targets, block_idx):
+        #     inputs, targets, block_idx = delay_transform(inputs, targets, block_idx)
+        #     return zero_inputs(inputs, targets, block_idx)
+
+        # self.train_dataset_ = DiskCachedDataset(
+        #     self.train_dataset_,
+        #     cache_path=self.cache_path,
+        #     full_transform=compose_full_transform
+        # )
         n_sample = len(self.train_dataset_)
         # always aim for 10*batch_size samples per valid and test set rest is train set
         # this prevents that too much data is used for validation when the dataset is very large
