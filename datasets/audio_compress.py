@@ -217,7 +217,7 @@ class LibriTTS(Dataset):
              try_path = download_path / "dev-clean"
              download_path = dev_clean_path
         elif train:
-            try_path = download_path / "train-clean"
+            try_path = download_path / "train-clean-100"
             download_path = train_clean_path
         else:
             try_path = download_path / "test-clean"
