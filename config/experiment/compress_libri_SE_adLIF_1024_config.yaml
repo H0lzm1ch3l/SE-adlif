@@ -21,7 +21,7 @@ main_q: 120
 step_type: linear
 tau_training: interpolationExpSigmoid
 exp_name: compres_libri_SE_adLIF
-unroll_factor: 256
+unroll_factor: 252
 encoder:
   dropout: 0.0
   l1:
@@ -169,15 +169,15 @@ loss:
   spectral_loss_gain: 1.0
   # the total loss have 4 part represented by their weighting coefficient
   # w_sc, w_log_mag, w_lin_mag, w_phs, soundstream loss use w_lin_mag: 1.0 and w_lin_mag: window
-  w_sc: 1.0 # normalized scaled difference between spectrum magnitude
+  w_sc: 0.0 # normalized scaled difference between spectrum magnitude
   w_log_mag: 1.0 #  float or "window" if window use the same scaling than in soundstream
-  w_lin_mag: 0.0 # difference between spectrum magnitude
+  w_lin_mag: 1.0 # difference between spectrum magnitude
   w_phs: 0.0 # phase regression loss
   mag_distance: L1 # distance between spectral magnitude, L1 or L2, only used for w_lin_mag (L1 for soundstream)
   mag_distance_log: L1 # distance between log spectral magnitude, L1 or L2, only used for w_log_mag (L2 for soundstream)
   mel_scale: htk # slaney or htk
   norm: none # slaney or "none"
-  mse_loss_gain: 10.0 # how much weight put to the generative loss
+  mse_loss_gain: 1.0 # how much weight put to the generative loss
   temp: 10.0 # temperature for Gumbel, higher value converge toward uniform distribution
   min_temp: 1.0
   temp_decay: 0.95
