@@ -20,8 +20,39 @@ import shutil
 import torchaudio
 import pickle
 from tqdm import tqdm
-import hashlib
+import tarfile
+import urllib.request
 
+def download_and_extract_tar_gz(url, extract_to):
+    """
+    Downloads a .tar.gz file from the specified URL and extracts it to the given directory.
+
+    :param url: str - The URL to the .tar.gz file.
+    :param extract_to: str - The path to the directory where the archive will be extracted.
+    """
+    extract_to_path = Path(extract_to)
+
+    # Ensure the destination directory exists
+    extract_to_path.mkdir(parents=True, exist_ok=True)
+
+    # Download the file
+    tar_gz_path = extract_to_path / Path(url).name
+    print(f"Downloading {url} to {tar_gz_path}...")
+
+    with urllib.request.urlopen(url) as response, open(tar_gz_path, 'wb') as out_file:
+        file_size = int(response.getheader('Content-Length', 0))
+        with tqdm(total=file_size, unit='B', unit_scale=True, desc=tar_gz_path.name) as pbar:
+            while chunk := response.read(1024):
+                out_file.write(chunk)
+                pbar.update(len(chunk))
+
+    print("Download complete.")
+
+    # Extract the file
+    print(f"Extracting {tar_gz_path} to {extract_to}")
+    with tarfile.open(tar_gz_path, "r:gz") as tar:
+        tar.extractall(path=extract_to_path)
+    print("Extraction complete.")
 
 def save_chunk_map(chunk_map, filepath):
     """Saves the chunk map to a pickle file."""
@@ -173,18 +204,36 @@ class LibriTTS(Dataset):
         # (this consume too much space one could save cut idx from each file and layzy load from full but time constraint)
         # alternativelly one could workout the sequence length from original sampling freq and new freq (original/new * seq_len ?)
         # then resample from full freq, then use the cachedisk to save the results
-        try_path = os.path.join(save_to, "dev-clean", "174", "84280")
-        if not os.path.exists(try_path):
-            print(f"Path {try_path} does not exist")
-            raise Exception(f"Path {try_path} does not exist")
+        dev_clean_path = "https://openslr.elda.org/resources/60/dev-clean.tar.gz"
+        dev_clean_md5 = "0c3076c1e5245bb3f0af7d82087ee207"
+        test_clean_path = "https://openslr.elda.org/resources/60/test-clean.tar.gz"
+        test_clean_md5 = "7bed3bdb047c4c197f1ad3bc412db59f"
+        train_clean_path = "https://openslr.elda.org/resources/60/train-clean-100.tar.gz"
+        train_clean_md5 = "4a8c202b78fe1bc0c47916a98f3a2ea8"
+        save_to = Path(save_to)
+        download_path = save_to / "LibriTTS"
+        
+        if debug:
+             try_path = download_path / "dev-clean"
+             download_path = dev_clean_path
+        elif train:
+            try_path = download_path / "train-clean"
+            download_path = train_clean_path
+        else:
+            try_path = download_path / "test-clean"
+            download_path = test_clean_path
+            
+        if not try_path.exists():
+            download_and_extract_tar_gz(download_path, save_to)
+            
         self.transform = transform
         self.target_transform = target_transform
         self.full_transform = full_transform
         self.get_metadata = get_metadata
         self.norm_type = normalization
         self.norm_func = norm_map[normalization]
-        self.root_dir = Path(save_to)
-        self.cache_path = Path(cache_path)
+        # self.root_dir = Path(download_root)
+        self.cache_path = Path(cache_path) / "LibriTTS"
         split = "debug"
         if not debug:
             split = "train" if train else "test"
@@ -197,12 +246,7 @@ class LibriTTS(Dataset):
             print("directory already exist")
         else:
             # for now only get debug
-            if debug:
-                copy_wave_files_with_path_names(
-                    self.root_dir / "dev-clean", full_split_dir
-                )
-            else:
-                raise NotImplementedError("Only debug is implemented for now")
+            copy_wave_files_with_path_names(try_path, full_split_dir)
         # 24_000/full split exist
 
         if not freq_split_dir.exists() or not any(freq_split_dir.iterdir()):
