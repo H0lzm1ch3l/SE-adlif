@@ -18,3 +18,5 @@ num_workers: 8
 fits_into_ram: True
 num_classes: 1
 normalization: 'peak'
+debug: True
+

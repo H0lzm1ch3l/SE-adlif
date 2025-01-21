@@ -319,6 +319,7 @@ class CompressLibri(pl.LightningDataModule):
         name: str = None,  # for hydra
         required_model_size: str = None,  # for hydra
         num_classes: int = 0,
+        debug: bool = True,
     ) -> None:
         super().__init__()
         self.batch_size = batch_size
@@ -349,12 +350,13 @@ class CompressLibri(pl.LightningDataModule):
             return inputs, targets, block_idx
 
         self.train_dataset_ = LibriTTS(
-            save_to=data_path + "/LibriTTS",
-            cache_path=cache_path + "/LibriTTS",
+            save_to=data_path,
+            cache_path=cache_path,
             sampling_freq=sampling_freq,
             sample_length=sample_length,
             normalization=normalization,
-            debug=True,
+            debug=debug,
+            train=True,
             transform=None,
             target_transform=None,
             full_transform=delay_transform,
@@ -386,14 +388,34 @@ class CompressLibri(pl.LightningDataModule):
         i = 10
         while i > 1 and n_sample - 2*batch_size*i < 0:
             i -= 1
-            
-        self.train_dataset_, self.valid_dataset_, self.test_dataset_ = (
-            torch.utils.data.random_split(
-                self.train_dataset_,
-                [n_sample - 2*i*batch_size, i*batch_size, i*batch_size],
-                generator=None,
+        if debug:
+            self.train_dataset_, self.valid_dataset_, self.test_dataset_ = (
+                torch.utils.data.random_split(
+                    self.train_dataset_,
+                    [n_sample - 2*i*batch_size, i*batch_size, i*batch_size],
+                    generator=None,
+                )
             )
-        )
+        else:
+            self.train_dataset_, self.valid_dataset_  = (
+                torch.utils.data.random_split(
+                    self.train_dataset_,
+                    [n_sample - 2*i*batch_size, 2*i*batch_size,],
+                    generator=None,
+                )
+            )
+            self.test_dataset_ = LibriTTS(
+                save_to=data_path,
+                cache_path=cache_path,
+                sampling_freq=sampling_freq,
+                sample_length=sample_length,
+                normalization=normalization,
+                debug=debug,
+                train=False,
+                transform=None,
+                target_transform=None,
+                full_transform=delay_transform,
+            )
         # create a sampler for self.train_dataset, that randomly sub-sample "self.max_sample" samples from
         # the total dataset length, this is not required if self.max_sample = -1 (total dataset)
         if self.max_sample != -1:
