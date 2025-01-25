@@ -157,7 +157,7 @@ class EFAdLIF(Module):
         
         # h0 states 
         if self.train_u0:
-            torch.nn.init.uniform_(self.u0, 0, self.thr.item())
+            torch.nn.init.uniform_(self.u0, 0, self.thr[0].item())
         else:
             torch.nn.init.zeros_(self.u0)
         torch.nn.init.zeros_(self.w0)
@@ -205,7 +205,9 @@ class EFAdLIF(Module):
         # else:
         #     self.a.data = torch.maximum(self.a, torch.zeros_like(self.a))
         self.b.data = torch.clamp(self.b, min=self.b_range[0], max=self.b_range[1])
-        self.u0.data = torch.clamp(self.u0, -self.thr, self.thr)
+        # clamp u0 between [-thr, +thr]
+        self.u0.data = self.u0 - torch.sign(self.u0)*torch.relu(torch.abs(self.u0) - self.thr)
+        self.thr.data = torch.maximum(self.thr, torch.zeros_like(self.thr))
         
     def forward(self, inputs: Tensor) -> Tensor:
         current = F.linear(inputs, self.weight, self.bias)
@@ -277,7 +279,7 @@ class EFAdLIF(Module):
                         ("b", self.b.cpu().detach().numpy()),
                          ("bias", self.bias.cpu().detach().numpy()),
                          ('u0', self.u0.cpu().numpy()),
-                         ('w0', self.w0.cpu().numpy())
+                         ('thr', self.thr.cpu().numpy())
                         ]
 
         if self.use_recurrent:

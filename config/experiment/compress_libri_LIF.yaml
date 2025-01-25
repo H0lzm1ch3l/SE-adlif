@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - /dataset: compress_libri_full
+  - /dataset: compress_libri
 
 enc_l1_neurons: 300
 enc_l2_neurons: 300
@@ -21,7 +21,7 @@ main_q: 120
 step_type: linear
 tau_training: interpolationExpSigmoid
 exp_name: compres_libri_SE_adLIF
-unroll_factor: 252
+unroll_factor: 128
 encoder:
   dropout: 0.0
   l1:
@@ -163,9 +163,9 @@ skip_first_n: 50
 loss:
   type: nll_spectral # mse_spectral, nll_spectral (generative loss), spectral (only spectral)
   # Spectral loss parameters (cf. https://arxiv.org/abs/2008.01160)
-  n_mels: 128 # number of bins in the mel-scale spectrogram (this is the features dimension of the spectrogram)
+  n_mels: 64 # number of bins in the mel-scale spectrogram (this is the features dimension of the spectrogram)
   min_window: 6 # min size of the FFT windows in power of two 
-  max_window: 11 # max size of the FTT windows in power of two
+  max_window: 9 # max size of the FTT windows in power of two
   spectral_loss_gain: 1.0
   # the total loss have 4 part represented by their weighting coefficient
   # w_sc, w_log_mag, w_lin_mag, w_phs, soundstream loss use w_lin_mag: 1.0 and w_lin_mag: window
