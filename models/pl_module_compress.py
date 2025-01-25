@@ -148,6 +148,10 @@ class GenerativeSpectralLoss(torch.nn.Module):
         discretization: str = "log",
         temp_decay: float = 1.0,
         min_temp: float = 1.0,
+        transition_begin: int = 0,
+        transition_steps: int = 1,
+        
+        
         *args,
         **kwargs,
     ):
@@ -159,7 +163,7 @@ class GenerativeSpectralLoss(torch.nn.Module):
         self.num_bins = num_bins
         # the discretization assume [-1, 1] normalization
         self.register_buffer("temp", torch.tensor(temp))
-        self.a = torch.tensor(86.7)
+        self.a = torch.tensor(87.6)
         self.gen_loss_gain = gen_loss_gain
         self.spectral_loss = spectral_loss
         self.spectral_loss_gain = spectral_loss_gain
@@ -170,8 +174,11 @@ class GenerativeSpectralLoss(torch.nn.Module):
         )
         self.register_buffer("delta", delta)  # uniform bining
         self.temp_decay = temp_decay
-        self.min_temp = min_temp
+        self.register_buffer('min_temp', torch.tensor(min_temp))
         self.register_buffer("bin_edges", bin_edges)
+        self.register_buffer("batch_count", torch.tensor(0))
+        self.transition_begin = transition_begin
+        self.transition_steps = transition_steps
 
         def linear_quantize(x):
             return torch.round((x + 1.0) / self.delta).long()
@@ -197,11 +204,21 @@ class GenerativeSpectralLoss(torch.nn.Module):
         # used for reconstruction of the quantized signal
         self.gen_loss = torch.nn.CrossEntropyLoss()
 
-    def reduce_temp(self):
-        self.temp = max(self.min_temp, self.temp_decay * self.temp)
-
+    def get_temp(self, forced_temp=None):
+        if forced_temp is None:   
+            if self.transition_begin >= self.batch_count:
+                rate_factor = ((self.batch_count - self.transition_begin) / self.transition_steps)
+                decayed_temp = self.temp * (self.temp_decay ** rate_factor)
+                if decayed_temp >= self.min_temp:
+                    return decayed_temp.item()
+                else:
+                    return self.min_temp.item()
+            else:
+                return self.temp.item()
+        else:
+            return forced_temp.item()
     def generate_wave(self, outputs, hard=False):
-        probs = torch.softmax(outputs/self.temp.item(), -1)
+        probs = torch.softmax(outputs/self.get_temp(), -1)
         # 3. reconstructs from bins centers
         output_wave = self.de_quantize(probs)
         return output_wave
@@ -210,17 +227,17 @@ class GenerativeSpectralLoss(torch.nn.Module):
         # outputs is assumed to be logits of shape (B, T, N) with N = num_bins
         # 1. compute sparse cross entropy w.r.t next token prediction
         bin_indices = self.quantize(targets)
-        soft_target =torch.softmax(-torch.square(bin_indices[:, 1:].unsqueeze(-1) - torch.arange(self.num_bins, device=outputs.device, dtype=torch.long).view(1, 1, -1))/self.temp.item(), dim=-1)
+        # soft_target = torch.softmax(-torch.square(bin_indices[:, 1:].unsqueeze(-1) - torch.arange(self.num_bins, device=outputs.device, dtype=torch.long).view(1, 1, -1))/0.1, dim=-1)
         # next token prediction        
         loss_gen = self.gen_loss(
-            outputs[:, :-1].reshape(-1, self.num_bins), soft_target.reshape(-1, self.num_bins)
+            outputs[:, :-1].reshape(-1, self.num_bins), bin_indices[:, 1:].reshape(-1)
         )
         # 2. Compute differentiable sample using Gumbel softmax reparametrization trick on categorical distribution
         # hard = True will return one-hot vector, we want something softer
         # temp is softmax temperature
         # temp -> +inf => probs is uniform, tmp-> 0, probs is pure categorical distribution (one-hot)
         # probs always sum to 1
-        probs = torch.softmax(outputs/self.temp.item(), -1)
+        probs = torch.softmax(outputs/self.get_temp(), -1)
         # 3. reconstructs quantized vector from convex sum of bins centers
         output_wave = self.de_quantize(probs)
         # 4. compute spectral loss, recall that output_wave is the next step prediction
@@ -339,6 +356,8 @@ class MLPSNN(pl.LightningModule):
                 discretization=cfg.loss.discretization,
                 temp_decay=cfg.loss.get("temp_decay", 1.0),
                 min_temp=cfg.loss.get("min_temp", 1.0),
+                transition_begin=cfg.loss.get('transition_begin', 0),
+                transition_steps=cfg.loss.get('transition_steps', 1)
             )
         else:
             self.loss = spectral_loss
@@ -369,6 +388,9 @@ class MLPSNN(pl.LightningModule):
 
     def on_train_batch_end(self, outputs, batch, batch_idx: int):
         self.model.apply_parameter_constraints()
+        
+        self.loss.batch_count += 1
+        
 
     def process_predictions_and_compute_losses(self, outputs, targets):
         """
@@ -668,6 +690,3 @@ class MLPSNN(pl.LightningModule):
             },
         )
 
-    def on_test_epoch_end(self):
-        if isinstance(self.loss, GenerativeSpectralLoss):
-            self.loss.reduce_temp()
