@@ -281,9 +281,12 @@ class MLPSNN(pl.LightningModule):
         # For learning rate scheduling (used for oscillation task)
         self.factor = cfg.factor
         self.patience = cfg.patience
-        self.num_fast_epoch = cfg.get("num_fast_epoch", 0)
-        self.fast_epoch_lr_factor = cfg.get("fast_epoch_lr_factor", 0)
+        self.num_fast_batch = cfg.get("num_fast_batch", 0)
+        self.fast_batch_lr_factor = cfg.get("fast_batch_lr_factor", 0)
         self.min_lr = cfg.get("min_lr", 0)
+        # This control the percentage of increase (or decrease) that should happend for 
+        # a epoch to be consider good (default is 1%), see reduceLROnPlateau  threshold parameter.
+        self.plateau_threshold = cfg.get('plateau_threshold', 1e-2)
 
         self.batch_size = cfg.dataset.batch_size
         self.model = Net(cfg)
@@ -390,6 +393,9 @@ class MLPSNN(pl.LightningModule):
         self.model.apply_parameter_constraints()
         
         self.loss.batch_count += 1
+        if (self.loss.batch_count > self.num_fast_batch):
+            sch = self.lr_schedulers()
+            sch.step(self.trainer.callback_metrics[self.tracking_metric])
         
 
     def process_predictions_and_compute_losses(self, outputs, targets):
@@ -477,7 +483,7 @@ class MLPSNN(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         opt_1, opt_2 = self.optimizers()
-        if self.trainer.current_epoch < self.num_fast_epoch:
+        if self.loss.batch_count < self.num_fast_batch:
             opt = opt_1
         else:
             opt = opt_2
@@ -536,12 +542,6 @@ class MLPSNN(pl.LightningModule):
             opt, gradient_clip_val=self.grad_norm, gradient_clip_algorithm="norm"
         )
         opt.step()
-        if (
-            self.trainer.is_last_batch
-            and self.trainer.current_epoch > self.num_fast_epoch
-        ):
-            sch = self.lr_schedulers()
-            sch.step(self.trainer.callback_metrics[self.tracking_metric])
 
         return loss
 
@@ -557,6 +557,10 @@ class MLPSNN(pl.LightningModule):
             self.val_metric,
             prefix="val_",
         )
+        self.log(
+            "val_spectral_loss_temp",
+            self.loss.get_temp(),
+            on_step=True, on_epoch=True)
 
         if batch_idx == 0:
             block_idx = block_idx[:, self.prediction_delay :].unsqueeze(-1)
@@ -663,13 +667,10 @@ class MLPSNN(pl.LightningModule):
         self.val_metric = metrics.clone(prefix="val_")
         self.test_metric = metrics.clone(prefix="test_")
 
-    # def on_before_optimizer_step(self, optimizer) -> None:
-    #     # log weights gradient norm
-    #     self.log_dict(grad_norm(self, norm_type=2))
 
     def configure_optimizers(self):
         opt_1 = torch.optim.Adam(
-            params=self.parameters(), lr=self.lr * self.fast_epoch_lr_factor
+            params=self.parameters(), lr=self.lr * self.fast_batch_lr_factor
         )
         opt_2 = torch.optim.Adam(params=self.parameters(), lr=self.lr)
         lr_2 = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -678,6 +679,7 @@ class MLPSNN(pl.LightningModule):
             factor=self.factor,
             patience=self.patience,
             min_lr=self.min_lr,
+            threshold=self.plateau_threshold,
         )
         return (
             {"optimizer": opt_1},

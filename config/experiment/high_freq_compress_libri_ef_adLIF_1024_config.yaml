@@ -9,22 +9,22 @@ dec_l1_neurons: 300
 dec_l2_neurons: 300
 dec_lout_neurons: 256
 bottleneck_neurons: 16
-main_a_range: [0, 5]
-main_b_range: [0, 34]
+main_a_range: [0, 1]
+main_b_range: [0, 5]
 main_tau_u_range: [5, 25]
 main_tau_w_range: [30, 300]
 train_u0: True
 train_thr: True
 thr: [1.0, 1.0]
 cell: ef_adlif
-main_q: 7
+main_q: 35
  # adlif step function: 
  #    "cos" reparametized "a" adapt parameter in terms of cos(w), with trainable w 
  #    "linear" standard step function 
 step_type: linear
 tau_training: interpolationExpSigmoid
 exp_name: compres_libri_SE_adLIF
-unroll_factor: 250
+unroll_factor: 256
 encoder:
   dropout: 0.0
   l1:
@@ -33,7 +33,7 @@ encoder:
     input_size: 1
     n_neurons: ${enc_l1_neurons}
     use_recurrent: False
-    thr: True
+    thr: ${thr}
     # gain for feedforward weight initialization
     ff_gain: 1.0
     # Range of tau_u
@@ -142,25 +142,29 @@ c: 0.4
 dt: 1.0
 
 # Number of epochs
-n_epochs: -1
+n_epochs: 10
 
 
 # Metric tracking
-tracking_metric: val_loss
-tracking_mode: min
+tracking_metric: val_si_snr
+tracking_mode: max
 
 # optimizer parameters
 # learning rate of the optimizer
 lr: 0.0005
-factor: 0.9
+factor: 0.1
 patience: 0
 min_lr: 1e-7
+# This control the percentage of increase (or decrease) that should happend for 
+# a epoch to be consider good (default is 1%), see reduceLROnPlateau  threshold parameter.
+plateau_threshold: 0.05
 
-grad_norm: 10
+# warm start, the lr is fixed at fast_batch_lr_factor*lr for the first num_fast_batch
+num_fast_batch: 2500
+fast_batch_lr_factor: 10
+grad_norm: 5
 
-# warm start, the lr is fixed at fast_epoch_lr_factor*lr for the first num_fast_epoch
-num_fast_epoch: 0
-fast_epoch_lr_factor: 10
+
 skip_first_n: 50
 loss:
   type: nll_spectral # mse_spectral, nll_spectral (generative loss), spectral (only spectral)
@@ -181,7 +185,7 @@ loss:
   norm: none # slaney or "none"
   mse_loss_gain: 1.0 # how much weight put to the generative loss
   temp: 10.0 # temperature for Gumbel, higher value converge toward uniform distribution
-  min_temp: 10.0
+  min_temp: 1.0
   temp_decay: 0.95
   transition_begin: 5000 # when to start to decay in number of batch
   transition_steps: 1000 # how much batch to way for the next transition 
@@ -194,7 +198,7 @@ loss:
 
 # regularization parameters
 min_spike_prob: [0.05, 0.005, 0.05, 0.05] # , 0.1]
-max_spike_prob: [0.1, 0.02, 0.1, 0.1] #, 0.2]
+max_spike_prob: [0.1, 0.02, 0.1, 0.3] #, 0.2]
 min_layer_coeff: [10.0, 10.0, 10.0, 10.0] #, 10.0] # encourage the first layer to spike
 max_layer_coeff: [10.0, 100, 10.0, 10.0] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
 compile: True
