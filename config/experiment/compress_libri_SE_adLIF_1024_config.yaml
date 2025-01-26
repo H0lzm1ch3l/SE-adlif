@@ -9,7 +9,7 @@ dec_l1_neurons: 300
 dec_l2_neurons: 300
 dec_lout_neurons: 256
 bottleneck_neurons: 16
-main_a_range: [0, 5]
+main_a_range: [0, 4]
 main_b_range: [0, 2]
 main_tau_u_range: [5, 25]
 main_tau_w_range: [30, 300]
