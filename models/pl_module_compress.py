@@ -393,6 +393,8 @@ class MLPSNN(pl.LightningModule):
         self.model.apply_parameter_constraints()
         
         self.loss.batch_count += 1
+    # on_train_epoch_end will have the val_{metric} https://lightning.ai/docs/pytorch/latest/common/lightning_module.html#hooks 
+    def on_train_epoch_end(self):
         if (self.loss.batch_count > self.num_fast_batch):
             sch = self.lr_schedulers()
             sch.step(self.trainer.callback_metrics[self.tracking_metric])
