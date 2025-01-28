@@ -136,12 +136,12 @@ class EFAdLIF(Module):
                 return step_fn(recurrent, alpha, beta, thr, a, b, u_rest, carry, cur)
 
             return generic_scan_with_states(wrapped_step, (u0, z0, w0), x, self.unroll)
-        if cfg.get('compile', True):
-            self.wrapped_scan = torch.compile(wrapped_scan)
-        else:
-            self.wrapped_scan = wrapped_scan
+        self.wrapped_scan = wrapped_scan
         self.wrapped_scan_with_states = wrapped_scan_with_states
-    
+        if not cfg.get('compile', False):
+            self.wrapped_scan = torch.compiler.disable(self.wrapped_scan, recursive=False)
+            self.wrapped_scan_with_states = torch.compiler.disable(self.wrapped_scan_with_states, recursive=False)
+        self.reset_parameters()
     def reset_parameters(self) -> None:
         self.tau_u_trainer.reset_parameters()
         self.tau_w_trainer.reset_parameters()
@@ -365,11 +365,9 @@ class SEAdLIF(EFAdLIF):
             def wrapped_step(carry, cur):
                 return step_fn(recurrent, alpha, beta, thr, a, b, u_rest, carry, cur)
             return generic_scan_with_states(wrapped_step, (u0, z0, w0), x, self.unroll)
-        
-        if cfg.get('compile', True):
-            self.wrapped_scan = torch.compile(wrapped_scan)
-            self.wrapped_scan_with_states = torch.compile(wrapped_scan_with_states)
-        else:
-            self.wrapped_scan = wrapped_scan
-            self.wrapped_scan_with_states = wrapped_scan_with_states
+        self.wrapped_scan = wrapped_scan
+        self.wrapped_scan_with_states = wrapped_scan_with_states
+        if not cfg.get('compile', False):
+            self.wrapped_scan = torch.compiler.disable(self.wrapped_scan, recursive=False)
+            self.wrapped_scan_with_states = torch.compiler.disable(self.wrapped_scan_with_states, recursive=False)
         self.reset_parameters()

@@ -10,14 +10,14 @@ dec_l2_neurons: 300
 dec_lout_neurons: 256
 bottleneck_neurons: 16
 main_a_range: [0, 1]
-main_b_range: [0, 5]
+main_b_range: [0, 2]
 main_tau_u_range: [5, 25]
 main_tau_w_range: [30, 300]
 train_u0: True
 train_thr: True
 thr: [1.0, 1.0]
 cell: ef_adlif
-main_q: 35
+main_q: 20
  # adlif step function: 
  #    "cos" reparametized "a" adapt parameter in terms of cos(w), with trainable w 
  #    "linear" standard step function 
@@ -157,10 +157,10 @@ patience: 0
 min_lr: 1e-7
 # This control the percentage of increase (or decrease) that should happend for 
 # a epoch to be consider good (default is 1%), see reduceLROnPlateau  threshold parameter.
-plateau_threshold: 0.05
+plateau_threshold: 0.005
 
 # warm start, the lr is fixed at fast_batch_lr_factor*lr for the first num_fast_batch
-num_fast_batch: 2500
+num_fast_batch: 3000
 fast_batch_lr_factor: 10
 grad_norm: 5
 
@@ -188,7 +188,7 @@ loss:
   min_temp: 1.0
   temp_decay: 0.95
   transition_begin: 5000 # when to start to decay in number of batch
-  transition_steps: 1000 # how much batch to way for the next transition 
+  transition_steps: 2000 # how much batch to way for the next transition 
   discretization: 'log'
   spectrum: "mel" # stft, mel, chroma
   perceptual_weighting: False # determine if we perform a A-weighting https://en.wikipedia.org/wiki/A-weighting
