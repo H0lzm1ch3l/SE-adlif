@@ -29,13 +29,12 @@ def compute_metric(path_to_model_output:str, wave_files_path:str):
     
     numpy_files = sorted(list(path_to_model_output.rglob("*.npy")),
                          key=lambda path: int(path.stem))
-    print(numpy_files)
     for i, numpy_file in enumerate(numpy_files):
         pred_wave = np.load(numpy_file)
-        pred_wave = torch.from_numpy(pred_wave)
-        target_wave, _ = torchaudio.load(wave_files_path[i])
-        print(m_si_snr(pred_wave.unsqueeze(0), target_wave.T.unsqueeze(0)))
-    print(m_si_snr.sum_si_snr)
+        pred_wave = torch.tensor(pred_wave, dtype=torch.float32)
+        target_wave = torchaudio.load(wave_files_path[i])[0].unsqueeze(0)
+        m_si_snr(pred_wave.permute((0,2,1)), target_wave)
+        print(m_si_snr.compute())
 
 @hydra.main(config_path="config", config_name="comp_metrics", version_base=None)
 def main(cfg: DictConfig):
