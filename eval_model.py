@@ -1,18 +1,12 @@
 
-import math
 from pathlib import Path
 import hydra
 from omegaconf import DictConfig
 
 import torch
-from datasets.audio_compress import LibriTTS
-from datasets.utils.pad_tensors import PadTensors
-from torch.utils.data import DataLoader
-import argparse
+import torchaudio
 from functools import partial
-import jax
-import jax.numpy as jnp
-from jax import Array
+
 from tqdm import tqdm
 
 def remove_prefix(text, prefix):
@@ -30,90 +24,94 @@ def repair_checkpoint(in_state_dict):
     for src_key, dest_key in pairings:
         out_state_dict[dest_key] = in_state_dict[src_key]
     return out_state_dict
-def get_decay(dt: float, tau_min:Array, tau_max: Array, w: Array):
+def get_decay(dt: float, alpha_min, alpha_max, w):
+    import jax
     coef = jax.nn.sigmoid(w)
-    alpha_min = jnp.exp(-dt/tau_min)
-    alpha_max = jnp.exp(-dt/tau_max)
     return alpha_max * coef + (1.0  - coef)*alpha_min
 
 def adlif_pytorch_states_dict_to_jax_dict(ckpt_path):
+    import jax
+    import jax.numpy as jnp
+    from jax import Array
     ckpt = torch.load(ckpt_path, map_location=None if torch.cuda.is_available() else torch.device('cpu'))
     ckpt_state_dict = ckpt['state_dict']
     ckpt_state_dict = repair_checkpoint(ckpt_state_dict)
     q = ckpt['hyper_parameters']['cfg']['encoder']['l1']['q']
+    print(q)
     nb_bottleneck_neurons = ckpt['hyper_parameters']['cfg']['bottleneck_neurons']
     ckpt_state_dict = jax.tree.map(lambda x: jnp.array(x.cpu().numpy(), dtype=jnp.float32), ckpt_state_dict)
     enc_l1_decay_u = get_decay(1.0, 
-                               ckpt_state_dict['model.encoder.l1.tau_u_trainer.tau_min'], 
-                               ckpt_state_dict['model.encoder.l1.tau_u_trainer.tau_max'],
+                               ckpt_state_dict['model.encoder.l1.tau_u_trainer.alpha_min'], 
+                               ckpt_state_dict['model.encoder.l1.tau_u_trainer.alpha_max'],
                                ckpt_state_dict['model.encoder.l1.tau_u_trainer.weight'])
 
 
     enc_l2_decay_u = get_decay(1.0, 
-                               ckpt_state_dict['model.encoder.l2.tau_u_trainer.tau_min'], 
-                               ckpt_state_dict['model.encoder.l2.tau_u_trainer.tau_max'],
+                               ckpt_state_dict['model.encoder.l2.tau_u_trainer.alpha_min'], 
+                               ckpt_state_dict['model.encoder.l2.tau_u_trainer.alpha_max'],
                                ckpt_state_dict['model.encoder.l2.tau_u_trainer.weight'])
 
 
     dec_l1_decay_u = get_decay(1.0, 
-                               ckpt_state_dict['model.decoder.l1.tau_u_trainer.tau_min'], 
-                               ckpt_state_dict['model.decoder.l1.tau_u_trainer.tau_max'], 
+                               ckpt_state_dict['model.decoder.l1.tau_u_trainer.alpha_min'], 
+                               ckpt_state_dict['model.decoder.l1.tau_u_trainer.alpha_max'], 
                                ckpt_state_dict['model.decoder.l1.tau_u_trainer.weight'])
 
 
     dec_l2_decay_u = get_decay(1.0, 
-                               ckpt_state_dict['model.decoder.l2.tau_u_trainer.tau_min'], 
-                               ckpt_state_dict['model.decoder.l2.tau_u_trainer.tau_max'],
+                               ckpt_state_dict['model.decoder.l2.tau_u_trainer.alpha_min'], 
+                               ckpt_state_dict['model.decoder.l2.tau_u_trainer.alpha_max'],
                                ckpt_state_dict['model.decoder.l2.tau_u_trainer.weight'])
 
     
     lout_decay = get_decay(1.0, 
-                           ckpt_state_dict['model.decoder.out_layer.tau_u_trainer.tau_min'], 
-                           ckpt_state_dict['model.decoder.out_layer.tau_u_trainer.tau_max'], 
+                           ckpt_state_dict['model.decoder.out_layer.tau_u_trainer.alpha_min'], 
+                           ckpt_state_dict['model.decoder.out_layer.tau_u_trainer.alpha_max'], 
                            ckpt_state_dict['model.decoder.out_layer.tau_u_trainer.weight'])
+    # print(ckpt['hyper_parameters']['cfg']['cell'])
+    # if ckpt['hyper_parameters']['cfg']['cell'] != 'lif':
     
-    if ckpt['hyper_parameters']['cfg']['cell'] != 'lif':
+    enc_l1_decay_w = get_decay(1.0,
+                            ckpt_state_dict['model.encoder.l1.tau_w_trainer.alpha_min'], 
+                            ckpt_state_dict['model.encoder.l1.tau_w_trainer.alpha_max'], 
+                            ckpt_state_dict['model.encoder.l1.tau_w_trainer.weight'])
     
-        enc_l1_decay_w = get_decay(1.0,
-                                ckpt_state_dict['model.encoder.l1.tau_w_trainer.tau_min'], 
-                                ckpt_state_dict['model.encoder.l1.tau_w_trainer.tau_max'], 
-                                ckpt_state_dict['model.encoder.l1.tau_w_trainer.weight'])
-        
-        enc_l2_decay_w = get_decay(1.0, 
-                                ckpt_state_dict['model.encoder.l2.tau_w_trainer.tau_min'], 
-                                ckpt_state_dict['model.encoder.l2.tau_w_trainer.tau_max'], 
-                                ckpt_state_dict['model.encoder.l2.tau_w_trainer.weight'])
+    enc_l2_decay_w = get_decay(1.0, 
+                            ckpt_state_dict['model.encoder.l2.tau_w_trainer.alpha_min'], 
+                            ckpt_state_dict['model.encoder.l2.tau_w_trainer.alpha_max'], 
+                            ckpt_state_dict['model.encoder.l2.tau_w_trainer.weight'])
 
-        dec_l1_decay_w = get_decay(1.0, 
-                                ckpt_state_dict['model.decoder.l1.tau_w_trainer.tau_min'], 
-                                ckpt_state_dict['model.decoder.l1.tau_w_trainer.tau_max'], 
-                                ckpt_state_dict['model.decoder.l1.tau_w_trainer.weight'])
+    dec_l1_decay_w = get_decay(1.0, 
+                            ckpt_state_dict['model.decoder.l1.tau_w_trainer.alpha_min'], 
+                            ckpt_state_dict['model.decoder.l1.tau_w_trainer.alpha_max'], 
+                            ckpt_state_dict['model.decoder.l1.tau_w_trainer.weight'])
+    
+    dec_l2_decay_w = get_decay(1.0, 
+                            ckpt_state_dict['model.decoder.l2.tau_w_trainer.alpha_min'], 
+                            ckpt_state_dict['model.decoder.l2.tau_w_trainer.alpha_max'], 
+                            ckpt_state_dict['model.decoder.l2.tau_w_trainer.weight'])
+    # else:
+    #     zero = jnp.zeros(())
+    #     enc_l1_decay_w = enc_l2_decay_w = dec_l1_decay_w = dec_l2_decay_w = zero
+    #     ckpt_state_dict['model.encoder.l1.a'] = zero
+    #     ckpt_state_dict['model.encoder.l1.b'] = zero
         
-        dec_l2_decay_w = get_decay(1.0, 
-                                ckpt_state_dict['model.decoder.l2.tau_w_trainer.tau_min'], 
-                                ckpt_state_dict['model.decoder.l2.tau_w_trainer.tau_max'], 
-                                ckpt_state_dict['model.decoder.l2.tau_w_trainer.weight'])
-    else:
-        zero = jnp.zeros(())
-        enc_l1_decay_w = enc_l2_decay_w = dec_l1_decay_w = dec_l2_decay_w = zero
-        ckpt_state_dict['model.encoder.l1.a'] = zero
-        ckpt_state_dict['model.encoder.l1.b'] = zero
-        ckpt_state_dict['model.encoder.l2.a'] = zero
-        ckpt_state_dict['model.encoder.l2.b'] = zero
+    #     ckpt_state_dict['model.encoder.l2.a'] = zero
+    #     ckpt_state_dict['model.encoder.l2.b'] = zero
         
-        ckpt_state_dict['model.decoder.l1.a'] = zero
-        ckpt_state_dict['model.decoder.l2.b'] = zero
+    #     ckpt_state_dict['model.decoder.l1.a'] = zero
+    #     ckpt_state_dict['model.decoder.l1.b'] = zero
 
-        ckpt_state_dict['model.decoder.l2.a'] = zero
-        ckpt_state_dict['model.decoder.l2.b'] = zero
+    #     ckpt_state_dict['model.decoder.l2.a'] = zero
+    #     ckpt_state_dict['model.decoder.l2.b'] = zero
     transition_begin = ckpt['hyper_parameters']['cfg']['loss']['transition_begin']
     transition_steps = ckpt['hyper_parameters']['cfg']['loss']['transition_steps']
     temp_decay = ckpt['hyper_parameters']['cfg']['loss']['temp_decay']
     factor = (ckpt_state_dict['loss.batch_count'] - transition_begin) / transition_steps
     min_temp = ckpt_state_dict['loss.min_temp']
     temp = ckpt_state_dict['loss.temp']
-    ckpt_state_dict['loss.temp'] = jnp.maximum(temp*temp_decay**factor, min_temp)
-
+    ckpt_state_dict['loss.temp'] = 10
+    print(ckpt_state_dict['loss.temp'])
     ckpt_state_dict.update(
         {
             "model.encoder.l1.decay_u": enc_l1_decay_u,
@@ -129,10 +127,12 @@ def adlif_pytorch_states_dict_to_jax_dict(ckpt_path):
             }
         )
     return ckpt_state_dict
-def se_adlif_model(model, weights: dict[str, Array], inputs:Array):
+def se_adlif_model(model, weights: dict, inputs):
+    import jax
+    import jax.numpy as jnp
     enc_l1_u0 = weights['model.encoder.l1.u0']
     enc_l1_w0 = jnp.zeros_like(enc_l1_u0)
-    enc_l1_z0 = jnp.zeros_like(enc_l1_z0)
+    enc_l1_z0 = jnp.zeros_like(enc_l1_u0)
     
     enc_l2_u0 = weights['model.encoder.l2.u0']
     enc_l2_w0 = jnp.zeros_like(enc_l2_u0)
@@ -157,7 +157,7 @@ def se_adlif_model(model, weights: dict[str, Array], inputs:Array):
     enc_l2_b = weights['model.encoder.l2.b']
     
     dec_l1_a = weights['model.decoder.l1.a']
-    dec_l1_b = weights['model.decoder.l2.b']
+    dec_l1_b = weights['model.decoder.l1.b']
 
     dec_l2_a = weights['model.decoder.l2.a']
     dec_l2_b = weights['model.decoder.l2.b']
@@ -178,68 +178,43 @@ def se_adlif_model(model, weights: dict[str, Array], inputs:Array):
     q = weights['q']
     nb_bottleneck_neurons = weights['nb_bottleneck_neurons']        
     def loop(carry, inputs):
-        enc_l1_u, enc_l1_w, enc_l1_z, enc_l2_u, enc_l2_w, enc_l2_z, dec_l1_u, dec_l1_w, dec_l1_z, dec_l2_u, dec_l2_w, dec_l2_z, lout_u = carry
+        enc_l1_u, enc_l1_w, enc_l2_u, enc_l2_w, enc_l2_z, dec_l1_u, dec_l1_w, dec_l1_z, dec_l2_u, dec_l2_w, dec_l2_z, lout_u = carry
         cur = inputs @ weights['model.encoder.l1.weight'].T + weights['model.encoder.l1.bias']
-        if model == "ef_adlif":
-            enc_l1_u_tm1 = enc_l1_u
-            enc_l1_z_tm1 = enc_l1_z
-        enc_l1_u = enc_l1_decay_u * enc_l1_u + (1.0 - enc_l1_decay_u) * (inputs - enc_l1_w)
+        enc_l1_u = enc_l1_decay_u * enc_l1_u + (1.0 - enc_l1_decay_u) * (cur - enc_l1_w)
         enc_l1_z = jnp.heaviside(enc_l1_u - weights['model.encoder.l1.thr'], 0.0)
         enc_l1_u = enc_l1_u * (1 - enc_l1_z) + enc_l1_u0*enc_l1_z
-        if model == "ef_adlif":
-            enc_l1_w = enc_l1_decay_w * enc_l1_w + (1.0 - enc_l1_decay_w) * (enc_l1_a * enc_l1_u_tm1 + enc_l1_b * enc_l1_z_tm1) * q
-        else:
-            enc_l1_w = enc_l1_decay_w * enc_l1_w + (1.0 - enc_l1_decay_w) * (enc_l1_a * enc_l1_u + enc_l1_b * enc_l1_z) * q
-            
-            
+        enc_l1_w = enc_l1_decay_w * enc_l1_w + (1.0 - enc_l1_decay_w) * (enc_l1_a * enc_l1_u + enc_l1_b * enc_l1_z) * q
+        
         cur = enc_l1_z @ weights['model.encoder.l2.weight'].T  + enc_l2_z @ weights['model.encoder.l2.recurrent'].T + weights['model.encoder.l2.bias']
-        if model == "ef_adlif":
-            enc_l2_u_tm1 = enc_l2_u
-            enc_l2_z_tm1 = enc_l2_z
         enc_l2_u = enc_l2_decay_u * enc_l2_u + (1.0 - enc_l2_decay_u) * (cur - enc_l2_w)
         enc_l2_z = jnp.heaviside(enc_l2_u - weights['model.encoder.l2.thr'], 0.0)
         enc_l2_u = enc_l2_u * (1 - enc_l2_z) + enc_l2_u0*enc_l2_z
-        if model == "ef_adlif":
-            enc_l2_w = enc_l2_decay_w * enc_l2_w + (1.0 - enc_l2_decay_w) * (enc_l2_a * enc_l2_u_tm1 + enc_l2_b * enc_l2_z_tm1) * q
-        else:
-            enc_l2_w = enc_l2_decay_w * enc_l2_w + (1.0 - enc_l2_decay_w) * (enc_l2_a * enc_l2_u + enc_l2_b * enc_l2_z) * q
-            
-            
+        enc_l2_w = enc_l2_decay_w * enc_l2_w + (1.0 - enc_l2_decay_w) * (enc_l2_a * enc_l2_u + enc_l2_b * enc_l2_z) * q
+        
         cur = enc_l2_z[: nb_bottleneck_neurons] @ weights['model.decoder.l1.weight'].T  + dec_l1_z @ weights['model.decoder.l1.recurrent'].T + weights['model.decoder.l1.bias']
-        if model == "ef_adlif":
-            dec_l1_u_tm1 = dec_l1_u
-            dec_l1_z_tm1 = dec_l1_z
         dec_l1_u = dec_l1_decay_u * dec_l1_u + (1.0 - dec_l1_decay_u) * (cur - dec_l1_w)
         dec_l1_z = jnp.heaviside(dec_l1_u - weights['model.decoder.l1.thr'], 0.0)
         dec_l1_u = dec_l1_u * (1 - dec_l1_z) + dec_l1_u0*dec_l1_z
-        if model == "ef_adlif":
-            dec_l1_w = dec_l1_decay_w * dec_l1_w + (1.0 - dec_l1_decay_w) * (dec_l1_a * dec_l1_u_tm1 + dec_l1_b * dec_l1_z_tm1) * q
-        else:
-            dec_l1_w = dec_l1_decay_w * dec_l1_w + (1.0 - dec_l1_decay_w) * (dec_l1_a * dec_l1_u + dec_l1_b * dec_l1_z) * q
+        dec_l1_w = dec_l1_decay_w * dec_l1_w + (1.0 - dec_l1_decay_w) * (dec_l1_a * dec_l1_u + dec_l1_b * dec_l1_z) * q
         
         cur = dec_l1_z @ weights['model.decoder.l2.weight'].T  + dec_l2_z @ weights['model.decoder.l2.recurrent'].T + weights['model.decoder.l2.bias']
-        if model == "ef_adlif":
-            dec_l2_u_tm1 = dec_l2_u
-            dec_l2_z_tm1 = dec_l2_z
         dec_l2_u = dec_l2_decay_u * dec_l2_u + (1.0 - dec_l2_decay_u) * (cur - dec_l2_w)
         dec_l2_z = jnp.heaviside(dec_l2_u - weights['model.decoder.l2.thr'], 0.0)
         dec_l2_u = dec_l2_u * (1 - dec_l2_z) + dec_l2_u0*dec_l2_z
-        if model == "ef_adlif":
-            dec_l2_w = dec_l2_decay_w * dec_l2_w + (1.0 - dec_l2_decay_w) * (dec_l2_a * dec_l2_u_tm1 + dec_l2_b * dec_l2_z_tm1) * q
-        else:
-            dec_l2_w = dec_l2_decay_w * dec_l2_w + (1.0 - dec_l2_decay_w) * (dec_l2_a * dec_l2_u + dec_l2_b * dec_l2_z) * q
+        dec_l2_w = dec_l2_decay_w * dec_l2_w + (1.0 - dec_l2_decay_w) * (dec_l2_a * dec_l2_u + dec_l2_b * dec_l2_z) * q
         
-        cur = dec_l2_z @ weights['model.decoder.out_layer.weight'].T   + weights['model.decoder.out_layer.bias']
+        cur = dec_l2_z @ weights['model.decoder.out_layer.weight'].T + weights['model.decoder.out_layer.bias']
         lout_u = lout_decay * lout_u + (1.0 - lout_decay) * cur
         probs = jax.nn.softmax(lout_u/weights['loss.temp'], -1)
         out = inverse_A_law(jnp.sum(probs * weights['loss.bin_edges'], keepdims=True))
-        out = out.astype(jnp.float32)
-        return (enc_l1_u, enc_l1_w, enc_l1_z, enc_l2_u, enc_l2_w, enc_l2_z, dec_l1_u, dec_l1_w, dec_l1_z, dec_l2_u, dec_l2_w, dec_l2_z, lout_u), out
-    _, out = jax.lax.scan(loop, (enc_l1_u0, enc_l1_w0, enc_l1_z0, enc_l2_u0, enc_l2_w0, enc_l2_z0, dec_l1_u0, dec_l1_w0, dec_l1_z0, dec_l2_u0, dec_l2_w0, dec_l2_z0, lout_u),
+        return (enc_l1_u, enc_l1_w, enc_l2_u, enc_l2_w, enc_l2_z, dec_l1_u, dec_l1_w, dec_l1_z, dec_l2_u, dec_l2_w, dec_l2_z, lout_u), out
+    _, out = jax.lax.scan(loop, (enc_l1_u0, enc_l1_w0, enc_l2_u0, enc_l2_w0, enc_l2_z0, dec_l1_u0, dec_l1_w0, dec_l1_z0, dec_l2_u0, dec_l2_w0, dec_l2_z0, lout_u),
                  inputs, unroll=1)
     return out
     
-def inverse_A_law(y: Array, a: float = 87.6):
+    
+def inverse_A_law(y, a: float = 87.6):
+    import jax.numpy as jnp
     sign_y = jnp.sign(y)
     abs_y = jnp.abs(y)
     log_a_p1 = jnp.log(a) + 1
@@ -248,63 +223,44 @@ def inverse_A_law(y: Array, a: float = 87.6):
     x = jnp.where(abs_y < 1/log_a_p1, x1, x2)    
     return sign_y*x
 
-def adlif_dataloder_loop(model, weights, py_dataloader, save_to):
+def adlif_dataloder_loop(model, weights, prediction_delay, wave_list_sorted, save_to):
+    import jax
+    import jax.numpy as jnp
+    from torchmetrics.audio import ScaleInvariantSignalNoiseRatio
+    import numpy as np
     save_to = Path(save_to)
     save_to.mkdir(exist_ok=True, parents=True)
     model = partial(se_adlif_model, model, weights)
-    model = jax.jit(jax.vmap(model), donate_argnums=0, inline=True)
+    model = jax.jit(jax.vmap(model), donate_argnums=0,)
     i = 0
-    for batch in tqdm(py_dataloader, "evaluation"):
-        inputs, targets, block_idx = batch
-        inputs = jnp.array(inputs, dtype=jnp.float32,)
+    m = ScaleInvariantSignalNoiseRatio()
+    for wave in tqdm(wave_list_sorted, "evaluation"):
+        _inputs, _ = torchaudio.load(wave)
+        inputs = jnp.array(_inputs, dtype=jnp.float32,).T
+        inputs = inputs[None, ...]
+        inputs = jnp.concat((inputs, jnp.zeros((inputs.shape[0], prediction_delay, inputs.shape[2]), dtype=inputs.dtype)), axis=1)
         out = model(inputs)
-        jnp.save(save_to/str(i), out, allow_pickle=False)
+        print(out.shape)
+        # jnp.save(save_to/str(i), out[0, prediction_delay:], allow_pickle=False)
+        print(m(torch.from_numpy(np.array(out[0, prediction_delay:])), _inputs.T))
         i += 1
         
 
-def create_test_libri_dataloader(ckpt_path, batch_size, num_workers):
+def create_test_libri_dataloader(ckpt_path, test_dataset_dir):
     ckpt = torch.load(ckpt_path, map_location=None if torch.cuda.is_available() else torch.device('cpu'))
-    def delay_transform(inputs, targets, block_idx):
-            # add zero padding to account for possible prediciton delay
-            # idea is that it is potentially complex for the model to predict
-            # y[t] = L(x[0:t]) where L is the model, x inputs, y the output
-            # delay allow predition as y[t - delay] = L([x[0:t]])
-            inputs = torch.concatenate(
-                (
-                    inputs,
-                    torch.zeros(
-                        (
-                            ckpt['hyper_parameters']['cfg']['dataset']['prediction_delay'], 1), 
-                        device=inputs.device, dtype=inputs.dtype
-                    ),
-                )
-            )
-            block_idx = torch.ones((inputs.shape[0],), dtype=torch.int32)
-            return inputs, targets, block_idx
+
+    # glob every waveform the dataset_dir sort them return the list of file
+    wave_list_sorted = sorted(list(Path(test_dataset_dir).rglob("*.wav")))
     
-    dataset = LibriTTS(ckpt['hyper_parameters']['cfg']['datadir'], ckpt['hyper_parameters']['cfg']['cachedir'], 
-                    sampling_freq=16_000, sample_length=-1, 
-                    normalization=ckpt['hyper_parameters']['cfg']['dataset']['normalization'],
-                    debug=False,
-                    train=False, 
-                    full_transform=delay_transform)
-    collate_fn = PadTensors(require_padding=True)
     
-    data_loader = DataLoader(dataset,
-                             shuffle=False,
-                             batch_size=batch_size,
-                             pin_memory=False,
-                             drop_last=False,
-                             collate_fn=collate_fn,
-                             num_workers=num_workers,
-                             persistent_workers=num_workers >0
-                             )
-    return data_loader
+    return ckpt['hyper_parameters']['cfg']['dataset']['prediction_delay'], wave_list_sorted
 @hydra.main(config_path="config", config_name="eval_run", version_base=None)
 def main(cfg: DictConfig):
-    py_dataloader = create_test_libri_dataloader(cfg.ckpt_path, 1, 0)
+    import jax
+    import jax.numpy as jnp
+    prediction_delay, wave_list_sorted = create_test_libri_dataloader(cfg.ckpt_path, cfg.test_dir_path)
     weight = adlif_pytorch_states_dict_to_jax_dict(cfg.ckpt_path)
-    adlif_dataloder_loop(cfg.model, weight, py_dataloader, cfg.save_to)
+    adlif_dataloder_loop(cfg.model, weight, prediction_delay, wave_list_sorted, cfg.save_to)
 
 if __name__ == "__main__":
     main()
