@@ -1,12 +1,10 @@
 defaults:
   - _self_
   - override hydra/job_logging: none # to disable hydra logging
-model: se_adlif # se_adlif, ef_adlif, lif model 
-ckpt_path: "/home/romirates/SE-adlif/results/hydra/2025-01-27/21-50-15/3/ckpt/epoch=2-step=28140.ckpt"
-save_to: "/home/romirates/results/se_adlif/47/3"
-test_dir_path: "/home/romirates/results/16000_peak"
+path_to_model_output: /home/romirates/results/se_adlif/47/3
+wave_files_path: /home/romirates/results/16000_peak
 logdir: ./results
-exp_name: eval_run
+exp_name: comp_metric_run
 
 hydra:
   job:
