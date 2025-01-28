@@ -1,0 +1,20 @@
+defaults:
+  - _self_
+  - override hydra/job_logging: none # to disable hydra logging
+# this utility read a pytorch checkpoint convert the weights into an inference ef-adlif, se-adlif lif loop and save outputs 
+# results to disk as npy files
+model: se_adlif # se_adlif, ef_adlif, lif model 
+ckpt_path: ./your_checkpoint
+save_to: ./where_to_save_results
+datadir: ./data
+cachedir: ./data/cache
+device: cuda:0
+
+hydra:  
+  job:
+    chdir: true
+  run:
+    dir: ${logdir}/hydra/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: ${logdir}/hydra/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
