@@ -1,3 +1,4 @@
+from functools import partial
 import math
 from typing import Any, Optional, Union
 import torch
@@ -154,6 +155,8 @@ class STFTLoss(torch.nn.Module):
                     "`sample_rate` must be supplied when `perceptual_weighting = True`."
                 )
             self.prefilter = FIRFilter(filter_type="aw", fs=sample_rate)
+        # disable complex operation because torch.compile do not support them
+        self.stft_call = torch.compiler.disable(self.stft)
 
     def stft(self, x):
         """Perform STFT.
@@ -164,7 +167,7 @@ class STFTLoss(torch.nn.Module):
             Tensor: x_mag, x_phs
                 Magnitude and phase spectra (B, fft_size // 2 + 1, frames).
         """
-        x_stft = torch.stft(
+        x_stft =torch.stft(
             input=x,
             n_fft=self.fft_size,
             hop_length=self.hop_size,
@@ -195,8 +198,8 @@ class STFTLoss(torch.nn.Module):
 
         # compute the magnitude and phase spectra of input and target
         self.window = self.window.to(input.device)
-        x_mag, x_phs = self.stft(input.view(-1, input.size(-1)))
-        y_mag, y_phs = self.stft(target.view(-1, target.size(-1)))
+        x_mag, x_phs = self.stft_call(input.view(-1, input.size(-1)))
+        y_mag, y_phs = self.stft_call(target.view(-1, target.size(-1)))
         # apply relevant transforms
         if self.scale is not None:
             self.fb = self.fb.to(input.device)
@@ -428,7 +431,6 @@ def get_spike_prob(z, block_idx):
     )
     # mean over all batches for the non-padded timesteps
     return spike_proba_per_block[:, 1].mean(dim=0) 
-
 
 def snn_regularization(spike_proba_per_layer: list[torch.Tensor], target: Union[float | list[float]], 
                        layer_weights: torch.Tensor,

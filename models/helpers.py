@@ -113,8 +113,8 @@ def generic_scan(
     out_ys = torch.empty_like(xs)
     
     def unrolled_body_(local_carry: tuple[torch.Tensor, ...], xs: torch.Tensor, local_out_ys: torch.Tensor):       
-        for i, x in enumerate(xs.unbind(1)):
-            local_carry, y = f(local_carry, x)
+        for i in range(xs.shape[1]):
+            local_carry, y = f(local_carry, xs[:, i])
             local_out_ys[:, i] = y
         return local_carry
 
@@ -142,8 +142,8 @@ def generic_scan_with_states(
     carry_out = torch.stack([torch.concat((x.unsqueeze(1).expand((xs.shape[0], 1, -1)), torch.empty_like(xs)), dim=1) for x in init], dim=0)
     def unrolled_body_(local_carry_out: tuple[torch.Tensor, ...], xs: torch.Tensor, local_out_ys: torch.Tensor):
         local_carry = local_carry_out[:, :, 0].unbind(0)
-        for i, x in enumerate(xs.unbind(1)):
-            local_carry, y = f(local_carry, x)
+        for i in range(xs.shape[1]):
+            local_carry, y = f(local_carry, xs[:, i])
             local_carry_out[:, :, i+1] = torch.stack(local_carry, 0)
             local_out_ys[:, i] = y
             
