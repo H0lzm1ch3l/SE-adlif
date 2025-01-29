@@ -553,7 +553,7 @@ class MLPSNN(pl.LightningModule):
         self.clip_gradients(
             opt, gradient_clip_val=self.grad_norm, gradient_clip_algorithm="norm"
         )
-        opt.step()
+        self.check_gradient(opt)
         self.log(
             "spectral_loss_temp",
             self.loss.get_temp(),
@@ -707,4 +707,19 @@ class MLPSNN(pl.LightningModule):
                 },
             },
         )
-
+    @torch.compiler.disable
+    def check_gradient(self, optimizer):
+        valid_gradients = True
+        un_valid_name = ""
+        for name, param in self.named_parameters():
+            if param.grad is not None:
+                valid_gradients = not (torch.isnan(param.grad).any() or torch.isinf(param.grad).any())
+                # valid_gradients = not (torch.isnan(param.grad).any())
+                if not valid_gradients:
+                    un_valid_name = name
+                    break
+        if valid_gradients:
+            optimizer.step()
+        else:
+            print(f"\ndetected inf or nan values in gradients at {un_valid_name}. not updating model parameters")
+            optimizer.zero_grad()
