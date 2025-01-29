@@ -1,7 +1,7 @@
 defaults:
   - _self_
   - override hydra/job_logging: none # to disable hydra logging
-path_to_model_output: /home/romirates/results/se_adlif/47/3
+path_to_model_output: /home/romirates/results/se_adlif/45/3
 wave_files_path: /home/romirates/results/16000_peak
 logdir: ./results
 exp_name: comp_metric_run
