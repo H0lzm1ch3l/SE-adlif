@@ -69,14 +69,19 @@ class LI(Module):
             def wrapped_step(u0, x):
                 return step_fn(alpha, u0, x)
             return generic_scan_with_states(wrapped_step, (u0,), x, self.unroll)
-        
-        if cfg.get('compile', True):
-            self.wrapped_scan = torch.compile(wrapped_scan)
-        else:
-            self.wrapped_scan = wrapped_scan
-        self.wrapped_scan_with_states = wrapped_scan_with_states
+        self.wrapped_scan = wrapped_scan
+        if not cfg.get('compile', False):
+            self.wrapped_scan = torch.compiler.disable(self.wrapped_scan, recursive=False)
+        #TODO: do not work properly in compile mode due to one states tuple shape
+        # maybe some errornous simplification
+        self.wrapped_scan_with_states = torch.compiler.disable(wrapped_scan_with_states, recursive=False)        
+        # if cfg.get('compile', True):
+        #     self.wrapped_scan = torch.compile(wrapped_scan)
+        # else:
+        #     self.wrapped_scan = wrapped_scan
+        # self.wrapped_scan_with_states = wrapped_scan_with_states
         self.reset_parameters()
-        
+    
     def reset_parameters(self):
         self.tau_u_trainer.reset_parameters()
         torch.nn.init.uniform_(
@@ -104,6 +109,7 @@ class LI(Module):
             requires_grad=True
         )
         return (u,)
+    
     def forward(self, inputs):
         current = F.linear(inputs, self.weight, self.bias)
         u, = self.initial_state(inputs.shape[0], device=inputs.device)

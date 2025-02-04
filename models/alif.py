@@ -136,12 +136,12 @@ class EFAdLIF(Module):
                 return step_fn(recurrent, alpha, beta, thr, a, b, u_rest, carry, cur)
 
             return generic_scan_with_states(wrapped_step, (u0, z0, w0), x, self.unroll)
-        if cfg.get('compile', True):
-            self.wrapped_scan = torch.compile(wrapped_scan)
-        else:
-            self.wrapped_scan = wrapped_scan
+        self.wrapped_scan = wrapped_scan
         self.wrapped_scan_with_states = wrapped_scan_with_states
-    
+        if not cfg.get('compile', False):
+            self.wrapped_scan = torch.compiler.disable(self.wrapped_scan, recursive=False)
+            self.wrapped_scan_with_states = torch.compiler.disable(self.wrapped_scan_with_states, recursive=False)
+        self.reset_parameters()
     def reset_parameters(self) -> None:
         self.tau_u_trainer.reset_parameters()
         self.tau_w_trainer.reset_parameters()
@@ -157,7 +157,7 @@ class EFAdLIF(Module):
         
         # h0 states 
         if self.train_u0:
-            torch.nn.init.uniform_(self.u0, 0, self.thr.item())
+            torch.nn.init.uniform_(self.u0, 0, self.thr[0].item())
         else:
             torch.nn.init.zeros_(self.u0)
         torch.nn.init.zeros_(self.w0)
@@ -205,7 +205,9 @@ class EFAdLIF(Module):
         # else:
         #     self.a.data = torch.maximum(self.a, torch.zeros_like(self.a))
         self.b.data = torch.clamp(self.b, min=self.b_range[0], max=self.b_range[1])
-        self.u0.data = torch.clamp(self.u0, -self.thr, self.thr)
+        # clamp u0 between [-thr, +thr]
+        self.u0.data = self.u0 - torch.sign(self.u0)*torch.relu(torch.abs(self.u0) - self.thr)
+        self.thr.data = torch.maximum(self.thr, torch.zeros_like(self.thr))
         
     def forward(self, inputs: Tensor) -> Tensor:
         current = F.linear(inputs, self.weight, self.bias)
@@ -277,7 +279,7 @@ class EFAdLIF(Module):
                         ("b", self.b.cpu().detach().numpy()),
                          ("bias", self.bias.cpu().detach().numpy()),
                          ('u0', self.u0.cpu().numpy()),
-                         ('w0', self.w0.cpu().numpy())
+                         ('thr', self.thr.cpu().numpy())
                         ]
 
         if self.use_recurrent:
@@ -363,11 +365,9 @@ class SEAdLIF(EFAdLIF):
             def wrapped_step(carry, cur):
                 return step_fn(recurrent, alpha, beta, thr, a, b, u_rest, carry, cur)
             return generic_scan_with_states(wrapped_step, (u0, z0, w0), x, self.unroll)
-        
-        if cfg.get('compile', True):
-            self.wrapped_scan = torch.compile(wrapped_scan)
-            self.wrapped_scan_with_states = torch.compile(wrapped_scan_with_states)
-        else:
-            self.wrapped_scan = wrapped_scan
-            self.wrapped_scan_with_states = wrapped_scan_with_states
+        self.wrapped_scan = wrapped_scan
+        self.wrapped_scan_with_states = wrapped_scan_with_states
+        if not cfg.get('compile', False):
+            self.wrapped_scan = torch.compiler.disable(self.wrapped_scan, recursive=False)
+            self.wrapped_scan_with_states = torch.compiler.disable(self.wrapped_scan_with_states, recursive=False)
         self.reset_parameters()

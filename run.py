@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 import matplotlib
 colors = matplotlib.colormaps.get_cmap('tab20').colors + matplotlib.colormaps.get_cmap('Set1').colors
 plt.rcParams['axes.prop_cycle'] = plt.cycler(color=colors)
-
 # Main entry point. We use Hydra (https://hydra.cc) for configuration management. 
 # Note, that Hydra changes the working directory, such that each run gets a unique directory.
 

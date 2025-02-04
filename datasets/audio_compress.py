@@ -1,19 +1,15 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import math
 from typing import Callable, Optional
 import hydra
 from torch.utils.data import Dataset
 import torch
-import numpy as np
 import os
-import tonic
 
 import torch.utils.data
 from torch.utils.data import DataLoader
 
 import pytorch_lightning as pl
 
-from datasets.utils.diskcache import DiskCachedDataset
 from datasets.utils.pad_tensors import PadTensors
 from pathlib import Path
 import shutil
@@ -115,7 +111,7 @@ def resample_normalize_and_save_wav_files(input_path, output_path, base_freq, ne
     wav_files = list(input_path.rglob("*.wav"))
 
     # Use multiprocessing to speed up the process
-    with ThreadPoolExecutor() as executor:
+    with ThreadPoolExecutor(max_workers=os.cpu_count() // 2) as executor:
         futures = [
             executor.submit(process_resampling_and_normalize, wav_file, output_path, new_freq, norm_func)
             for wav_file in wav_files

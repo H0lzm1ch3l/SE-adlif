@@ -7,7 +7,7 @@ from omegaconf import DictConfig, open_dict
 from pytorch_lightning.utilities import grad_norm
 import matplotlib
 import torchmetrics.audio
-
+import os
 from functional.metrics import MeanSquaredErrorFlat
 
 matplotlib.use("Agg")
@@ -29,7 +29,7 @@ from models.rnn import LSTMCellWrapper
 
 # from models.sli import SLI
 torch.autograd.set_detect_anomaly(True)
-torch._dynamo.config.cache_size_limit = 64
+torch._dynamo.config.cache_size_limit = 128
 torch.set_float32_matmul_precision("high")
 layer_map = {
     "lif": LIF,
@@ -148,6 +148,10 @@ class GenerativeSpectralLoss(torch.nn.Module):
         discretization: str = "log",
         temp_decay: float = 1.0,
         min_temp: float = 1.0,
+        transition_begin: int = 0,
+        transition_steps: int = 1,
+        
+        
         *args,
         **kwargs,
     ):
@@ -159,7 +163,7 @@ class GenerativeSpectralLoss(torch.nn.Module):
         self.num_bins = num_bins
         # the discretization assume [-1, 1] normalization
         self.register_buffer("temp", torch.tensor(temp))
-        self.a = torch.tensor(86.7)
+        self.a = torch.tensor(87.6)
         self.gen_loss_gain = gen_loss_gain
         self.spectral_loss = spectral_loss
         self.spectral_loss_gain = spectral_loss_gain
@@ -170,8 +174,11 @@ class GenerativeSpectralLoss(torch.nn.Module):
         )
         self.register_buffer("delta", delta)  # uniform bining
         self.temp_decay = temp_decay
-        self.min_temp = min_temp
+        self.register_buffer('min_temp', torch.tensor(min_temp))
         self.register_buffer("bin_edges", bin_edges)
+        self.register_buffer("batch_count", torch.tensor(0))
+        self.transition_begin = transition_begin
+        self.transition_steps = transition_steps
 
         def linear_quantize(x):
             return torch.round((x + 1.0) / self.delta).long()
@@ -196,31 +203,48 @@ class GenerativeSpectralLoss(torch.nn.Module):
         # take the centers of the bin edges
         # used for reconstruction of the quantized signal
         self.gen_loss = torch.nn.CrossEntropyLoss()
-
-    def reduce_temp(self):
-        self.temp = max(self.min_temp, self.temp_decay * self.temp)
-
-    def generate_wave(self, outputs, hard=False):
-        probs = torch.softmax(outputs/self.temp.item(), -1)
+    #TODO: use cond as get_temp have a control flow it is not compilable
+    
+    @torch.compiler.disable
+    def get_temp(self, forced_temp=None):
+        if forced_temp is None:   
+            if self.transition_begin <= self.batch_count:
+                rate_factor = ((self.batch_count - self.transition_begin) / self.transition_steps)
+                decayed_temp = self.temp * (self.temp_decay ** rate_factor)
+                if decayed_temp >= self.min_temp:
+                    return decayed_temp
+                else:
+                    return self.min_temp
+            else:
+                return self.temp
+        else:
+            return forced_temp
+        
+    def generate_wave(self, outputs, temp):
+        probs = torch.softmax(outputs/temp, -1)
         # 3. reconstructs from bins centers
         output_wave = self.de_quantize(probs)
         return output_wave
-
+    
     def forward(self, outputs, targets):
+        temp = self.get_temp()
+        return self.forward_with_temp(outputs, targets, temp)
+
+    def forward_with_temp(self, outputs, targets, temp):
         # outputs is assumed to be logits of shape (B, T, N) with N = num_bins
         # 1. compute sparse cross entropy w.r.t next token prediction
         bin_indices = self.quantize(targets)
-        soft_target =torch.softmax(-torch.square(bin_indices[:, 1:].unsqueeze(-1) - torch.arange(self.num_bins, device=outputs.device, dtype=torch.long).view(1, 1, -1))/self.temp.item(), dim=-1)
+        # soft_target = torch.softmax(-torch.square(bin_indices[:, 1:].unsqueeze(-1) - torch.arange(self.num_bins, device=outputs.device, dtype=torch.long).view(1, 1, -1))/0.1, dim=-1)
         # next token prediction        
         loss_gen = self.gen_loss(
-            outputs[:, :-1].reshape(-1, self.num_bins), soft_target.reshape(-1, self.num_bins)
+            outputs[:, :-1].reshape(-1, self.num_bins), bin_indices[:, 1:].reshape(-1)
         )
         # 2. Compute differentiable sample using Gumbel softmax reparametrization trick on categorical distribution
         # hard = True will return one-hot vector, we want something softer
         # temp is softmax temperature
         # temp -> +inf => probs is uniform, tmp-> 0, probs is pure categorical distribution (one-hot)
         # probs always sum to 1
-        probs = torch.softmax(outputs/self.temp.item(), -1)
+        probs = torch.softmax(outputs/temp, -1)
         # 3. reconstructs quantized vector from convex sum of bins centers
         output_wave = self.de_quantize(probs)
         # 4. compute spectral loss, recall that output_wave is the next step prediction
@@ -264,14 +288,17 @@ class MLPSNN(pl.LightningModule):
         # For learning rate scheduling (used for oscillation task)
         self.factor = cfg.factor
         self.patience = cfg.patience
-        self.num_fast_epoch = cfg.get("num_fast_epoch", 0)
-        self.fast_epoch_lr_factor = cfg.get("fast_epoch_lr_factor", 0)
+        self.num_fast_batch = cfg.get("num_fast_batch", 0)
+        self.fast_batch_lr_factor = cfg.get("fast_batch_lr_factor", 0)
         self.min_lr = cfg.get("min_lr", 0)
+        # This control the percentage of increase (or decrease) that should happend for 
+        # a epoch to be consider good (default is 1%), see reduceLROnPlateau  threshold parameter.
+        self.plateau_threshold = cfg.get('plateau_threshold', 1e-2)
 
         self.batch_size = cfg.dataset.batch_size
         self.model = Net(cfg)
         if cfg.get("compile", False):
-            self.model = torch.compile(self.model, dynamic=True)
+            self.model = torch.compile(self.model, dynamic=True,)
 
         self.output_func = cfg.get("loss_agg", "softmax")
         self.init_metrics_and_loss()
@@ -339,10 +366,13 @@ class MLPSNN(pl.LightningModule):
                 discretization=cfg.loss.discretization,
                 temp_decay=cfg.loss.get("temp_decay", 1.0),
                 min_temp=cfg.loss.get("min_temp", 1.0),
+                transition_begin=cfg.loss.get('transition_begin', 0),
+                transition_steps=cfg.loss.get('transition_steps', 1)
             )
         else:
             self.loss = spectral_loss
-
+        # if cfg.get("compile", False):
+        #    self.loss = torch.compile(self.loss, dynamic=True,)
         # regularization parameters
         self.min_spike_prob = cfg.min_spike_prob
         self.max_spike_prob = cfg.max_spike_prob
@@ -354,6 +384,7 @@ class MLPSNN(pl.LightningModule):
             self.max_layer_coeff = self.max_layer_coeff[:-1]
         self.grad_norm = cfg.grad_norm
         self.automatic_optimization = False
+        
 
     def forward(self, inputs: torch.Tensor):
         out = self.model(inputs)
@@ -369,6 +400,14 @@ class MLPSNN(pl.LightningModule):
 
     def on_train_batch_end(self, outputs, batch, batch_idx: int):
         self.model.apply_parameter_constraints()
+        
+        self.loss.batch_count += 1
+    # on_train_epoch_end will have the val_{metric} https://lightning.ai/docs/pytorch/latest/common/lightning_module.html#hooks 
+    def on_train_epoch_end(self):
+        if (self.loss.batch_count > self.num_fast_batch):
+            sch = self.lr_schedulers()
+            sch.step(self.trainer.callback_metrics[self.tracking_metric])
+        
 
     def process_predictions_and_compute_losses(self, outputs, targets):
         """
@@ -426,7 +465,7 @@ class MLPSNN(pl.LightningModule):
 
         outputs = outputs[:, self.skip_first_n + self.prediction_delay :]
         if isinstance(self.loss, GenerativeSpectralLoss):
-            outputs = self.loss.generate_wave(outputs)
+            outputs = self.loss.generate_wave(outputs, self.loss.get_temp())
         # outputs_flat = outputs.reshape(-1, outputs.shape[-1])
         # targets_flat = targets.reshape(-1, targets.shape[-1])
 
@@ -455,7 +494,7 @@ class MLPSNN(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         opt_1, opt_2 = self.optimizers()
-        if self.trainer.current_epoch < self.num_fast_epoch:
+        if self.loss.batch_count < self.num_fast_batch:
             opt = opt_1
         else:
             opt = opt_2
@@ -493,6 +532,7 @@ class MLPSNN(pl.LightningModule):
             "upper",
             reduce_layer="sum",
             reduce_neuron="sum",
+            
         )
         reg_lower, log_lower = snn_regularization(
             sum_spikes,
@@ -513,14 +553,12 @@ class MLPSNN(pl.LightningModule):
         self.clip_gradients(
             opt, gradient_clip_val=self.grad_norm, gradient_clip_algorithm="norm"
         )
-        opt.step()
-        if (
-            self.trainer.is_last_batch
-            and self.trainer.current_epoch > self.num_fast_epoch
-        ):
-            sch = self.lr_schedulers()
-            sch.step(self.trainer.callback_metrics[self.tracking_metric])
-
+        self.check_gradient(opt)
+        self.log(
+            "spectral_loss_temp",
+            self.loss.get_temp(),
+            on_step=True, on_epoch=True)
+        
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -535,6 +573,10 @@ class MLPSNN(pl.LightningModule):
             self.val_metric,
             prefix="val_",
         )
+        self.log(
+            "val_spectral_loss_temp",
+            self.loss.get_temp(),
+            on_step=True, on_epoch=True)
 
         if batch_idx == 0:
             block_idx = block_idx[:, self.prediction_delay :].unsqueeze(-1)
@@ -562,7 +604,7 @@ class MLPSNN(pl.LightningModule):
             batch_output = outputs[rnd_batch_idx]
             if isinstance(self.loss, GenerativeSpectralLoss):
                 batch_output = self.loss.generate_wave(
-                    batch_output.unsqueeze(0)
+                    batch_output.unsqueeze(0), self.loss.get_temp()
                 ).squeeze()
 
             for layer, module in enumerate(layers):
@@ -641,13 +683,10 @@ class MLPSNN(pl.LightningModule):
         self.val_metric = metrics.clone(prefix="val_")
         self.test_metric = metrics.clone(prefix="test_")
 
-    # def on_before_optimizer_step(self, optimizer) -> None:
-    #     # log weights gradient norm
-    #     self.log_dict(grad_norm(self, norm_type=2))
 
     def configure_optimizers(self):
         opt_1 = torch.optim.Adam(
-            params=self.parameters(), lr=self.lr * self.fast_epoch_lr_factor
+            params=self.parameters(), lr=self.lr * self.fast_batch_lr_factor
         )
         opt_2 = torch.optim.Adam(params=self.parameters(), lr=self.lr)
         lr_2 = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -656,6 +695,7 @@ class MLPSNN(pl.LightningModule):
             factor=self.factor,
             patience=self.patience,
             min_lr=self.min_lr,
+            threshold=self.plateau_threshold,
         )
         return (
             {"optimizer": opt_1},
@@ -667,7 +707,19 @@ class MLPSNN(pl.LightningModule):
                 },
             },
         )
-
-    def on_test_epoch_end(self):
-        if isinstance(self.loss, GenerativeSpectralLoss):
-            self.loss.reduce_temp()
+    @torch.compiler.disable
+    def check_gradient(self, optimizer):
+        valid_gradients = True
+        un_valid_name = ""
+        for name, param in self.named_parameters():
+            if param.grad is not None:
+                valid_gradients = not (torch.isnan(param.grad).any() or torch.isinf(param.grad).any())
+                # valid_gradients = not (torch.isnan(param.grad).any())
+                if not valid_gradients:
+                    un_valid_name = name
+                    break
+        if valid_gradients:
+            optimizer.step()
+        else:
+            print(f"\ndetected inf or nan values in gradients at {un_valid_name}. not updating model parameters")
+            optimizer.zero_grad()

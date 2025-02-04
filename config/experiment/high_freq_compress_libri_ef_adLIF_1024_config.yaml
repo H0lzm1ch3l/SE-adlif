@@ -9,15 +9,15 @@ dec_l1_neurons: 300
 dec_l2_neurons: 300
 dec_lout_neurons: 256
 bottleneck_neurons: 16
-main_a_range: [0, 4]
+main_a_range: [0, 1]
 main_b_range: [0, 2]
 main_tau_u_range: [5, 25]
 main_tau_w_range: [30, 300]
 train_u0: True
 train_thr: True
 thr: [1.0, 1.0]
-cell: se_adlif
-main_q: 120
+cell: ef_adlif
+main_q: 20
  # adlif step function: 
  #    "cos" reparametized "a" adapt parameter in terms of cos(w), with trainable w 
  #    "linear" standard step function 
