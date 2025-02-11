@@ -2,27 +2,21 @@ import math
 import pytorch_lightning as pl
 import torch
 import torchmetrics
-from torch.nn import CrossEntropyLoss, MSELoss
-from omegaconf import DictConfig,
+from omegaconf import DictConfig
 from pytorch_lightning.utilities import grad_norm
 import matplotlib
 import torchmetrics.audio
-import os
 from functional.metrics import MeanSquaredErrorFlat
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
 from functional.loss import (
     MultiResolutionSTFTLoss,
-    get_per_layer_spike_probs,
     snn_regularization,
 )
 from models.alif import EFAdLIF, SEAdLIF
 from models.helpers import A_law, inverse_A_law
-from models.helpers import save_fig_to_aim
 from models.li import LI
-from models.sli import SLI
 from models.lif import LIF
 from models.rnn import LSTMCellWrapper
 
@@ -37,7 +31,6 @@ layer_map = {
     "ef_adlif": EFAdLIF,
     "lstm": LSTMCellWrapper,
     "li": LI,
-    "sli": SLI,
 }
 
 
@@ -48,31 +41,29 @@ class Encoder(torch.nn.Module):
         self.l2 = layer_map[cfg.l2.cell](cfg.l2)
         self.l1_spike = torch.empty(size=())
         self.l2_spike = torch.empty(size=())
-        self.dropout = cfg.dropout
 
     def apply_parameter_constraints(self):
         self.l1.apply_parameter_constraints()
         self.l2.apply_parameter_constraints()
 
     def forward(self, inputs):
-        out = self.l1(inputs)
+        out = self.l1.layer_forward(inputs)
         self.l1_spike = out
-        out = self.l2(out)
+        out = self.l2.layer_forward(out)
         self.l2_spike = out
 
         return out
 
     @torch.no_grad()
     def forward_with_states(self, inputs):
-        l1_states, out = self.l1.forward_with_states(inputs)
-        l2_states, out = self.l2.forward_with_states(out)
+        l1_states, out = self.l1.layer_forward_with_states(inputs)
+        l2_states, out = self.l2.layer_forward_with_states(out)
         return [l1_states, l2_states], out
 
 
 class Decoder(torch.nn.Module):
     def __init__(self, cfg):
         super().__init__()
-        self.light_decoder = cfg.light_decoder
         self.l1 = layer_map[cfg.l1.cell](cfg.l1)
         self.l2 = layer_map[cfg.l2.cell](cfg.l2)
 
@@ -81,36 +72,33 @@ class Decoder(torch.nn.Module):
 
         self.aux_out = torch.empty(size=())
         self.out_layer = layer_map[cfg.l_out.cell](cfg.l_out)
-        self.dropout = cfg.dropout
 
     def apply_parameter_constraints(self):
         self.l1.apply_parameter_constraints()
-        if not self.light_decoder:
-            self.l2.apply_parameter_constraints()
+        self.l2.apply_parameter_constraints()
         self.out_layer.apply_parameter_constraints()
 
     def forward(self, inputs):
         out = inputs
-        out = self.l1(out)
+        out = self.l1.layer_forward(out)
         self.l1_spike = out
 
-        if not self.light_decoder:
-            out = self.l2(out)
-            self.l2_spike = out
-        out = self.out_layer(out)
+        out = self.l2.layer_forward(out)
+        self.l2_spike = out
+        out = self.out_layer.layer_forward(out)
+        
         return out
 
     def forward_with_states(self, inputs):
         out = inputs
         states = []
-        l1_states, out = self.l1.forward_with_states(out)
+        l1_states, out = self.l1.layer_forward_with_states(out)
         self.l1_spike = out
         states.append(l1_states)
-        if not self.light_decoder:
-            l2_states, out = self.l2.forward_with_states(out)
-            self.l2_spike = out
-            states.append(l2_states)
-        out_states, out = self.out_layer.forward_with_states(out)
+        l2_states, out = self.l2.layer_forward_with_states(out)
+        self.l2_spike = out
+        states.append(l2_states)
+        out_states, out = self.out_layer.layer_forward_with_states(out)
         states.append(out_states)
         return states, out
 
@@ -145,7 +133,6 @@ class GenerativeSpectralLoss(torch.nn.Module):
         gen_loss_gain,
         spectral_loss,
         spectral_loss_gain,
-        discretization: str = "log",
         temp_decay: float = 1.0,
         min_temp: float = 1.0,
         transition_begin: int = 0,
@@ -165,7 +152,6 @@ class GenerativeSpectralLoss(torch.nn.Module):
         self.gen_loss_gain = gen_loss_gain
         self.spectral_loss = spectral_loss
         self.spectral_loss_gain = spectral_loss_gain
-        self.discretization = discretization
         delta = torch.tensor(2.0 / (num_bins - 1))
         bin_edges = torch.tensor(
             [-1.0 + i * 2.0 / (num_bins - 1) for i in range(num_bins)]
@@ -191,12 +177,8 @@ class GenerativeSpectralLoss(torch.nn.Module):
             y = linear_dequantize(x)
             return inverse_A_law(y, self.a)
 
-        self.quantize = (
-            linear_quantize if self.discretization == "linear" else log_quantize
-        )
-        self.de_quantize = (
-            linear_dequantize if self.discretization == "linear" else log_dequantize
-        )
+        self.quantize = log_quantize
+        self.de_quantize = log_dequantize
         self.gen_loss = torch.nn.CrossEntropyLoss()
     
     @torch.compiler.disable
@@ -222,9 +204,6 @@ class GenerativeSpectralLoss(torch.nn.Module):
     
     def forward(self, outputs, targets):
         temp = self.get_temp()
-        return self.forward_with_temp(outputs, targets, temp)
-
-    def forward_with_temp(self, outputs, targets, temp):
         # outputs is assumed to be logits of shape (B, T, N) with N = num_bins
         # 1. compute sparse cross entropy w.r.t next token prediction
         bin_indices = self.quantize(targets)
@@ -245,21 +224,7 @@ class GenerativeSpectralLoss(torch.nn.Module):
         # spectral loss expect (B, C, T) with C channel dim (in our case C=1)
         loss_spectral = self.spectral_loss(output_wave[:, :-1].permute((0,2,1)), targets[:, 1:].permute((0,2,1)))
         return self.gen_loss_gain * loss_gen + self.spectral_loss_gain * loss_spectral
-
-
-class CompositeLoss(torch.nn.Module):
-    def __init__(self, spectral_loss, spectral_loss_gain, mse_loss, mse_loss_gain):
-        super().__init__()
-        self.spectral_loss = spectral_loss
-        self.mse_loss = mse_loss
-        self.spectral_loss_gain = spectral_loss_gain
-        self.mse_loss_gain = mse_loss_gain
-
-    def forward(self, outputs, targets):
-        spectral_loss = self.spectral_loss(outputs, targets)
-        mse_loss = self.mse_loss(outputs, targets)
-        return self.spectral_loss_gain * spectral_loss + self.mse_loss_gain * mse_loss
-
+    
 
 class MLPSNN(pl.LightningModule):
     def __init__(
@@ -268,10 +233,6 @@ class MLPSNN(pl.LightningModule):
     ) -> None:
         super().__init__()
         print(cfg)
-        if cfg.loss.type == "nll_spectral":
-            # make sure that we don't average over the li / sli dim
-            cfg.decoder.l_out.reduce = "none"
-
         self.output_size = cfg.dataset.num_classes
         self.tracking_metric = cfg.tracking_metric
         self.tracking_mode = cfg.tracking_mode
@@ -288,13 +249,13 @@ class MLPSNN(pl.LightningModule):
         # This control the percentage of increase (or decrease) that should happend for 
         # a epoch to be consider good (default is 1%), see reduceLROnPlateau  threshold parameter.
         self.plateau_threshold = cfg.get('plateau_threshold', 1e-2)
-
         self.batch_size = cfg.dataset.batch_size
+        
         self.model = Net(cfg)
+        
         if cfg.get("compile", False):
             self.model = torch.compile(self.model, dynamic=True,)
 
-        self.output_func = cfg.get("loss_agg", "softmax")
         self.init_metrics_and_loss()
         self.save_hyperparameters()
         
@@ -313,6 +274,7 @@ class MLPSNN(pl.LightningModule):
         norm = cfg.loss.get('norm', 'slaney')
         if norm == 'none':
             norm = None
+        
         spectral_loss = MultiResolutionSTFTLoss(
             fft_sizes=n_fft,
             win_lengths=windows_length,
@@ -332,39 +294,24 @@ class MLPSNN(pl.LightningModule):
             mel_scale=cfg.loss.get('mel_scale', 'slaney'),
             norm=norm,
             )
-
-        if cfg.loss.type == "mse_spectral":
-            self.loss = CompositeLoss(
-                spectral_loss,
-                cfg.loss.spectral_loss_gain,
-                MSELoss(),
-                cfg.loss.mse_loss_gain,
-            )
-        elif cfg.loss.type == "nll_spectral":
-            self.loss = GenerativeSpectralLoss(
-                num_bins=cfg.decoder.l_out.n_neurons,
-                temp=cfg.loss.temp,
-                gen_loss_gain=cfg.loss.mse_loss_gain,
-                spectral_loss=spectral_loss,
-                spectral_loss_gain=cfg.loss.spectral_loss_gain,
-                discretization=cfg.loss.discretization,
-                temp_decay=cfg.loss.get("temp_decay", 1.0),
-                min_temp=cfg.loss.get("min_temp", 1.0),
-                transition_begin=cfg.loss.get('transition_begin', 0),
-                transition_steps=cfg.loss.get('transition_steps', 1)
-            )
-        else:
-            self.loss = spectral_loss
+        self.loss = GenerativeSpectralLoss(
+            num_bins=cfg.decoder.l_out.n_neurons,
+            temp=cfg.loss.temp,
+            gen_loss_gain=cfg.loss.mse_loss_gain,
+            spectral_loss=spectral_loss,
+            spectral_loss_gain=cfg.loss.spectral_loss_gain,
+            temp_decay=cfg.loss.get("temp_decay", 1.0),
+            min_temp=cfg.loss.get("min_temp", 1.0),
+            transition_begin=cfg.loss.get('transition_begin', 0),
+            transition_steps=cfg.loss.get('transition_steps', 1)
+        )
             
         self.min_spike_prob = cfg.min_spike_prob
         self.max_spike_prob = cfg.max_spike_prob
         self.min_layer_coeff = cfg.min_layer_coeff
         self.max_layer_coeff = cfg.max_layer_coeff
-        self.light_decoder = cfg.decoder.light_decoder
-        if self.light_decoder:
-            self.min_layer_coeff = self.min_layer_coeff[:-1]
-            self.max_layer_coeff = self.max_layer_coeff[:-1]
         self.grad_norm = cfg.grad_norm
+        
         self.automatic_optimization = False
         
 
@@ -442,8 +389,7 @@ class MLPSNN(pl.LightningModule):
         targets = targets[:, 1 + self.skip_first_n :]
 
         outputs = outputs[:, self.skip_first_n + self.prediction_delay :]
-        if isinstance(self.loss, GenerativeSpectralLoss):
-            outputs = self.loss.generate_wave(outputs, self.loss.get_temp())
+        outputs = self.loss.generate_wave(outputs, self.loss.get_temp())
 
         metrics(outputs[:,:-1].permute((0,2,1)), targets[:, 1:].permute((0,2,1)))
         self.log_dict(
@@ -492,13 +438,9 @@ class MLPSNN(pl.LightningModule):
             self.model.encoder.l1_spike,
             self.model.encoder.l2_spike,
             self.model.decoder.l1_spike,
+            self.model.decoder.l2_spike,
         ]
-        if not self.light_decoder:
-            sum_spikes.extend(
-                [
-                    self.model.decoder.l2_spike,
-                ]
-            )
+        
         # remove ignored spike then take the neuron-wise spike proba
         sum_spikes = [x[:, self.skip_first_n :].mean(0).mean(0) for x in sum_spikes]
         reg_upper, log_upper = snn_regularization(
@@ -549,10 +491,6 @@ class MLPSNN(pl.LightningModule):
             self.val_metric,
             prefix="val_",
         )
-        self.log(
-            "val_spectral_loss_temp",
-            self.loss.get_temp(),
-            on_step=True, on_epoch=True)
 
         if batch_idx == 0:
             block_idx = block_idx[:, self.prediction_delay :].unsqueeze(-1)
@@ -560,76 +498,8 @@ class MLPSNN(pl.LightningModule):
             tmp_block_idx[:, : self.skip_first_n, :] = 0
             # determine a random example to visualized
             # remove the last layer states as it is assumed to be non-spiking
-            spike_probabilities = get_per_layer_spike_probs(
-                states[:-1],
-                tmp_block_idx,
-            )
-            rnd_batch_idx = torch.randint(0, inputs.shape[0], size=()).item()
-            prev_layer_input = inputs[rnd_batch_idx]
-            layers = [
-                self.model.encoder.l1,
-                self.model.encoder.l2,
-                self.model.decoder.l1,
-            ]
-            if not self.light_decoder:
-                # layers.extend([self.model.decoder.l1, self.model.decoder.l2, self.model.decoder.out_layer])
-                layers.extend([self.model.decoder.l2, self.model.decoder.out_layer])
-            else:
-                layers.append(self.model.decoder.out_layer)
 
-            batch_output = outputs[rnd_batch_idx]
-            if isinstance(self.loss, GenerativeSpectralLoss):
-                batch_output = self.loss.generate_wave(
-                    batch_output.unsqueeze(0), self.loss.get_temp()
-                ).squeeze()
-
-            for layer, module in enumerate(layers):
-                if hasattr(module, "layer_stats"):
-                    module.layer_stats(
-                        logger=self.logger,
-                        epoch_step=self.current_epoch,
-                        inputs=prev_layer_input,
-                        states=states[layer][:, rnd_batch_idx],
-                        targets=targets[rnd_batch_idx],
-                        layer_idx=layer,
-                        block_idx=block_idx[rnd_batch_idx],
-                        spike_probabilities=spike_probabilities[layer]
-                        if len(spike_probabilities) > layer
-                        else None,
-                        output_size=self.output_size,
-                        auto_regression=True,
-                        output=batch_output[self.prediction_delay :].cpu().numpy(),
-                    )
-                    if layer < len(layers) - 1:
-                        prev_layer_input = states[layer][1, rnd_batch_idx]
-
-            self.plot_reconstruction(batch_output, targets[rnd_batch_idx])
         return loss
-
-    @torch.compiler.disable
-    def plot_reconstruction(self, outputs, targets):
-        figure, axes = plt.subplots(nrows=2, ncols=1, sharex="all", figsize=(8, 8))
-        targets = torch.flatten(targets[1 + self.skip_first_n :])
-        outputs = torch.flatten(outputs[self.skip_first_n + self.prediction_delay :])
-        outputs = outputs.cpu().detach().numpy()
-        targets = targets.cpu().detach().numpy()
-
-        axes[0].plot(outputs, label="Output")
-        axes[0].set_ylabel("Reconstruction vs Target")
-
-        axes[0].plot(targets, label="Target")
-        axes[0].legend()
-
-        axes[1].plot((outputs - targets) ** 2, label="MSE")
-        axes[1].set_ylabel("MSE")
-        plt.tight_layout()
-        plt.close(figure)
-        save_fig_to_aim(
-            logger=self.logger,
-            name=f"Reconstruction",
-            figure=figure,
-            epoch_step=self.current_epoch,
-        )
 
     def test_step(self, batch, batch_idx):
         inputs, targets, block_idx = batch
@@ -679,7 +549,6 @@ class MLPSNN(pl.LightningModule):
                 "optimizer": opt_2,
                 "lr_scheduler": {
                     "scheduler": lr_2,
-                    "monitor": self.tracking_metric,
                 },
             },
         )
@@ -690,7 +559,6 @@ class MLPSNN(pl.LightningModule):
         for name, param in self.named_parameters():
             if param.grad is not None:
                 valid_gradients = not (torch.isnan(param.grad).any() or torch.isinf(param.grad).any())
-                # valid_gradients = not (torch.isnan(param.grad).any())
                 if not valid_gradients:
                     un_valid_name = name
                     break

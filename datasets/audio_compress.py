@@ -33,16 +33,17 @@ def download_and_extract_tar_gz(url, extract_to):
 
     # Download the file
     tar_gz_path = extract_to_path / Path(url).name
-    print(f"Downloading {url} to {tar_gz_path}...")
+    if not tar_gz_path.exists():
+        print(f"Downloading {url} to {tar_gz_path}...")
 
-    with urllib.request.urlopen(url) as response, open(tar_gz_path, 'wb') as out_file:
-        file_size = int(response.getheader('Content-Length', 0))
-        with tqdm(total=file_size, unit='B', unit_scale=True, desc=tar_gz_path.name) as pbar:
-            while chunk := response.read(1024):
-                out_file.write(chunk)
-                pbar.update(len(chunk))
+        with urllib.request.urlopen(url) as response, open(tar_gz_path, 'wb') as out_file:
+            file_size = int(response.getheader('Content-Length', 0))
+            with tqdm(total=file_size, unit='B', unit_scale=True, desc=tar_gz_path.name) as pbar:
+                while chunk := response.read(1024):
+                    out_file.write(chunk)
+                    pbar.update(len(chunk))
 
-    print("Download complete.")
+        print("Download complete.")
 
     # Extract the file
     print(f"Extracting {tar_gz_path} to {extract_to}")
@@ -82,8 +83,8 @@ def copy_wave_files_with_path_names(root_path, destination_path):
 
 
 def process_resampling_and_normalize(wav_file, output_path, target_sample_rate, norm_func):
-    # Load the audio file
-    waveform, sample_rate = torchaudio.load(wav_file)
+    # Load the audio file, cast path to str because sox lack of support
+    waveform, sample_rate = torchaudio.load(str(wav_file))
 
     with torch.no_grad():
         # if sample_rate == target_sample_rate resample is the identity
@@ -96,7 +97,7 @@ def process_resampling_and_normalize(wav_file, output_path, target_sample_rate, 
     output_file = output_path / wav_file.name
 
     # Save the resampled audio to the output path
-    torchaudio.save(output_file, waveform, target_sample_rate, encoding="PCM_S", bits_per_sample=16)
+    torchaudio.save(str(output_file), waveform, target_sample_rate, encoding="PCM_S", bits_per_sample=16)
 
 
 def resample_normalize_and_save_wav_files(input_path, output_path, base_freq, new_freq, norm_func):
@@ -126,7 +127,7 @@ def create_chunk_map(file_paths, chunk_size):
 
     for wav_file in file_paths:
         # Load the audio file to get its number of samples
-        waveform, sample_rate = torchaudio.load(wav_file)
+        waveform, sample_rate = torchaudio.load(str(wav_file))
 
         # Calculate the number of valid chunks for this file
         num_samples = waveform.shape[1]
@@ -148,12 +149,12 @@ def get_chunk_by_id(chunk_id, chunk_map, chunk_size, norm_func):
     # Determine the number of frames (samples) to load
     if chunk_size == -1:
         # If chunk_size == -1, load the entire file
-        waveform, sample_rate = torchaudio.load(wav_file)
+        waveform, sample_rate = torchaudio.load(str(wav_file))
         return waveform
 
     # Use torchaudio.load to load only the chunk
     waveform, sample_rate = torchaudio.load(
-        wav_file,
+        str(wav_file),
         frame_offset=start_sample,
         num_frames=chunk_size
     )

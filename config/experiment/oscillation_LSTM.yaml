@@ -5,31 +5,30 @@ defaults:
 
 exp_name: oscillation_LSTM
 
-# Which cell to use
-cell: lstm
 
 n_epochs: 200
 
 auto_regression: True
-
-# input size 
-input_size: ${dataset.n_dof}
-# number of neurons
-n_neurons: 100
-
-# positive initial bias for the forget gate
-forget_bias_init: 1.0
-
 # Whether to use a two-layer network
 two_layers: False
-
-# Dropout rate
 dropout: 0.0
+dt: 1.0
+l1:
+  # Which cell to use
+  cell: lstm
+  input_size: ${dataset.n_dof}
+  # number of neurons
+  n_neurons: 100
+  forget_bias_init: 1.0
 
-# Time constant of output layer 
-tau_out_range: [1, 20]
-train_tau_out_method: 'interpolation'
-
+l_out:
+  input_size: 100
+  # number of neurons
+  n_neurons: ${dataset.n_dof}
+  # Time constant of output layer 
+  tau_u_range: [1, 20]
+  train_tau_u_method: 'interpolation'
+  dt: ${dt}
 
 # Batch size
 batch_size: 256

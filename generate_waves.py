@@ -12,6 +12,7 @@ from functools import partial
 
 from tqdm import tqdm
 import urllib
+import numpy as np
 
 from datasets.audio_compress import LibriTTS
 test_clean_path = "https://openslr.elda.org/resources/60/test-clean.tar.gz"
@@ -318,16 +319,18 @@ def adlif_dataloder_loop(encoder_only, model, weights, prediction_delay, wave_li
     model = partial(inference_model, encoder_only, model, weights)
     model = jax.jit(jax.vmap(model),)
     for wave in tqdm(wave_list_sorted, "evaluation"):
-        inputs = torchaudio.load(wave)[0].T.unsqueeze(0)
+        inputs = torchaudio.load(str(wave))[0].T.unsqueeze(0)
         inputs = 1/torch.max(inputs.abs())* inputs
         inputs = jnp.array(inputs.cpu().numpy(), dtype=jnp.float32,)
         inputs = jnp.concat((inputs, jnp.zeros((inputs.shape[0], prediction_delay, inputs.shape[2]), dtype=inputs.dtype)), axis=1)
         out = model(inputs)
         out = out[0, prediction_delay:]
+        out = np.array(out, dtype=np.float32, copy=True)
+
         if encoder_only:
             jnp.save(save_to/(wave.stem + ".npy"), allow_pickle=False)
         else:
-            torchaudio.save(save_to/wave.name , torch.tensor(out.squeeze()[None, ...], dtype=torch.float32), 
+            torchaudio.save(str(save_to/wave.name) , torch.tensor(out.squeeze()[None, ...], dtype=torch.float32), 
                             24_000, encoding="PCM_S", bits_per_sample=16)
 
 def load_ckpt_and_wav_files(ckpt_path, dataset_dir_or_wav_file):
