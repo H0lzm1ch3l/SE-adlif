@@ -9,11 +9,13 @@ __pycache__/
 
 # C extensions
 *.so
-
+logs
+logs/*
 results/
 results/*
 .vscode/
-
+test_clean
+test_clean/*
 *.wav
 
 # Distribution / packaging
