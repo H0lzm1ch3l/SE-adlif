@@ -51,8 +51,8 @@ def compute_visqol(source_files: list[Path,], prediction_files: list[Path,],
     r_sum = 0
     n = 0
     for i in (pbar := tqdm(range(len(prediction_files)))):
-        target_wave = torchaudio.load(source_files[i])[0].squeeze()
-        pred_wave = torchaudio.load(prediction_files[i])[0].squeeze()
+        target_wave = torchaudio.load(str(source_files[i]))[0].squeeze()
+        pred_wave = torchaudio.load(str(prediction_files[i]))[0].squeeze()
         
         # Following visqol guidelines we only evaluate waveforms that are 7-11 seconds long
         if not(7*sampling_rate < target_wave.shape[0] < 11*sampling_rate):
@@ -88,11 +88,11 @@ def compute_si_srn(source_files: list[Path,], prediction_files: list[Path,]):
     m_si_snr = ScaleInvariantSignalNoiseRatio()
     r_mean = 0
     for i in (pbar := tqdm(range(len(prediction_files)))):
-        target_wave = torchaudio.load(source_files[i])[0]
+        target_wave = torchaudio.load(str(source_files[i]))[0]
         # rescaling
         target_wave = 1.0/torch.max(target_wave.abs())* target_wave
         
-        pred_wave = torchaudio.load(prediction_files[i])[0]
+        pred_wave = torchaudio.load(str(prediction_files[i]))[0]
         r = m_si_snr(pred_wave, target_wave).item()
         
         r_mean = m_si_snr.compute().item()

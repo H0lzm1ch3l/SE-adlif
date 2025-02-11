@@ -4,38 +4,42 @@ defaults:
   - /dataset: oscillation
 
 exp_name: oscillation_LIF
-
-# Which cell to use
-cell: lif
-
 auto_regression: True
-
-# input size 
-input_size: ${dataset.n_dof}
-
-# number of neurons
-n_neurons: 200
 
 # Whether to use a two-layer network
 two_layers: False
-
 # Parameters of SLAYER
-alpha: 10
-c: 0.5
+main_alpha: 10
+main_c: 0.5
+main_dt: 1.0
+dropout: 0.0
+
+l1:
+  input_size: ${dataset.n_dof}
+  # number of neurons
+  n_neurons: 200
+  # Which cell to use
+  cell: lif
+  # Range of tau_u
+  tau_u_range: [1, 25]
+
+  alpha: ${main_alpha}
+  c: ${main_c}
+  dt: ${main_dt}
+
+l_out:
+  input_size: 200
+  # number of neurons
+  n_neurons: ${dataset.n_dof}
+  # Time constant of output layer 
+  tau_u_range: [1, 20]
+  train_tau_u_method: 'interpolation'
+  dt: ${main_dt}
+
 
 # Number of epochs
 n_epochs: 200
 use_recurrent: True
-
-# Range of tau_u
-tau_u_range: [1, 25]
-
-# Dropout rate
-dropout: 0.0
-
-# Time constant of output layer 
-tau_out_range: [1, 20]
-train_tau_out_method: 'interpolation'
 
 # Batch size
 batch_size: 256

@@ -2,7 +2,7 @@
 from typing import Optional, Sequence
 
 import torch._dynamo.guards
-from models.helpers import generic_scan, generic_scan_with_states, get_event_indices, save_distributions_to_aim, save_fig_to_aim, spike_grad_injection_function
+from models.helpers import generic_scan, generic_scan_with_states, spike_grad_injection_function
 import torch
 import torch.nn.functional as F
 from torch.nn import Module
@@ -11,7 +11,6 @@ from torch.nn.parameter import Parameter
 
 from module.tau_trainers import TauTrainer, get_tau_trainer_class
 from omegaconf import DictConfig
-import matplotlib.pyplot as plt
 class LIF(Module):
     __constants__ = ["in_features", "out_features"]
     in_features: int
@@ -85,6 +84,7 @@ class LIF(Module):
             z = spike_grad_injection_function(u_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest*z.detach()
             return (u, z), z
+        self.step = step_fn
         
         def wrapped_scan(u0: Parameter,
                          z0: Tensor, x: Tensor,
@@ -144,7 +144,13 @@ class LIF(Module):
                         )
         return self.u0.unsqueeze(0), z
     
-    def forward(self, inputs: torch.Tensor) -> Tensor:
+    def forward(self, input_tensor: Tensor, states: tuple[Tensor, Tensor]) -> tuple[Tensor, Tensor]:
+        decay_u = self.tau_u_trainer.get_decay()
+        soma_current = F.linear(input_tensor, self.weight, self.bias)
+        new_states, z_t = self.step(self.recurrent, decay_u, self.thr, self.u0,  states, soma_current)
+        return z_t, new_states
+
+    def layer_forward(self, inputs: torch.Tensor) -> Tensor:
         current = F.linear(inputs, self.weight, self.bias)
         decay_u = self.tau_u_trainer.get_decay()
         u, z = self.initial_state(inputs.shape[0], inputs.device)
@@ -152,7 +158,7 @@ class LIF(Module):
         return out_buffer[:, :, :self.num_out_neuron]
     
     @torch.no_grad()
-    def forward_with_states(self, inputs: torch.Tensor) -> Tensor:
+    def layer_forward_with_states(self, inputs: torch.Tensor) -> Tensor:
         current = F.linear(inputs, self.weight, self.bias)
         decay_u = self.tau_u_trainer.get_decay()
         u, z = self.initial_state(inputs.shape[0], inputs.device)
@@ -162,75 +168,3 @@ class LIF(Module):
         self.tau_u_trainer.apply_parameter_constraints()
         self.u0.data = self.u0 - torch.sign(self.u0)*torch.relu(torch.abs(self.u0) - self.thr)
         self.thr.data = torch.maximum(self.thr, torch.zeros_like(self.thr))
-        
-    @torch.jit.ignore
-    @staticmethod
-    def plot_states(layer_idx, inputs, states):
-        figure, axes = plt.subplots(nrows=3, ncols=1, sharex="all", figsize=(8, 11))
-        is_events = torch.all(inputs == inputs.round())
-        inputs = inputs.cpu().detach().numpy()
-        states = states.cpu().detach().numpy()
-        
-        if is_events:
-            axes[0].eventplot(get_event_indices(inputs.T), color='black', orientation='horizontal')
-        else:
-            axes[0].plot(inputs)
-        axes[0].set_ylabel("input")
-        axes[1].plot(states[0])
-        axes[1].set_ylabel("v_t")
-        axes[2].eventplot(
-            get_event_indices(states[1].T), color="black", orientation="horizontal"
-        )
-        axes[2].set_ylabel("z_t/output")
-        nb_spikes_str = str(states[1].sum())
-        figure.suptitle(f"Layer {layer_idx}\n Nb spikes: {nb_spikes_str},")
-        plt.close(figure)
-        return figure
-
-    @torch.jit.ignore
-    def layer_stats(
-        self,
-        layer_idx: int,
-        logger,
-        epoch_step: int,
-        spike_probabilities: torch.Tensor,
-        inputs: torch.Tensor,
-        states: torch.Tensor,
-        **kwargs,
-    ):
-        """Generate statistisc from the layer weights and a plot of the layer dynamics for a random task example
-        Args:
-            layer_idx (int): index for the layer in the hierarchy
-            logger (_type_): aim logger reference
-            epoch_step (int): epoch
-            spike_probability (torch.Tensor): spike probability for each neurons
-            inputs (torch.Tensor): random example
-            states (torch.Tensor): states associated to the computation of the random example
-        """
-
-        save_fig_to_aim(
-            logger=logger,
-            name=f"{layer_idx}_Activity",
-            figure=LIF.plot_states(layer_idx, inputs, states),
-            epoch_step=epoch_step,
-        )
-
-        distributions = [
-            ("soma_tau", self.tau_u_trainer.get_tau().cpu().detach().numpy()),
-            ("soma_weights", self.weight.cpu().detach().numpy()),
-            ("spike_prob", spike_probabilities.cpu().detach().numpy()),
-            ("bias", self.bias.cpu().detach().numpy()),
-            ('u0', self.u0.cpu().numpy()),
-            ('thr', self.thr.cpu().numpy())
-        ]
-
-        if self.use_recurrent:
-            distributions.append(
-                ("recurrent_weights", self.recurrent.cpu().detach().numpy())
-            )
-        save_distributions_to_aim(
-            logger=logger,
-            distributions=distributions,
-            name=f"{layer_idx}",
-            epoch_step=epoch_step,
-        )
