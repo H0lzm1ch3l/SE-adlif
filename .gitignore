@@ -3,13 +3,20 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.png
+*.pdf
+*.svg
 
 # C extensions
 *.so
-
+logs
+logs/*
 results/
 results/*
 .vscode/
+test_clean
+test_clean/*
+*.wav
 
 # Distribution / packaging
 .Python

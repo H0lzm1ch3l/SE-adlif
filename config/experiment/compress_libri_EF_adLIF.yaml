@@ -1,0 +1,185 @@
+# @package _global_
+
+defaults:
+  - /dataset: compress_libri
+
+enc_l1_neurons: 300
+enc_l2_neurons: 300
+dec_l1_neurons: 300
+dec_l2_neurons: 300
+dec_lout_neurons: 256
+bottleneck_neurons: 16
+main_a_range: [0, 1]
+main_b_range: [0, 2]
+main_tau_u_range: [5, 25]
+main_tau_w_range: [30, 300]
+train_u0: True
+train_thr: True
+thr: [1.0, 1.0]
+cell: ef_adlif
+main_q: 20
+tau_training: interpolationExpSigmoid
+exp_name: compres_libri_EF_adLIF
+unroll_factor: 256
+compile: True
+
+# Parameters of SLAYER
+alpha: 5.0
+c: 0.4
+dt: 1.0
+
+encoder:
+  dropout: 0.0
+  l1:
+    # input size 
+    cell: ${cell}
+    input_size: 1
+    n_neurons: ${enc_l1_neurons}
+    use_recurrent: False
+    thr: ${thr}
+    # gain for feedforward weight initialization
+    ff_gain: 1.0
+    # Range of tau_u
+    tau_u_range: ${main_tau_u_range}
+    # Range of tau_w
+    tau_w_range: ${main_tau_w_range}
+    a_range: ${main_a_range}
+    b_range: ${main_b_range}
+    q: ${main_q}
+    use_u_rest: ${train_u0}
+    train_u0: ${train_u0}
+    train_thr: ${train_thr}
+    compile: True
+    train_tau: ${tau_training}
+    unroll: ${unroll_factor}
+  l2:
+    cell: ${cell}
+    input_size: ${enc_l1_neurons}
+    n_neurons: ${enc_l2_neurons}
+    use_recurrent: True
+    thr: ${thr}
+    # gain for feedforward weight initialization
+    ff_gain: 1.0
+    # Range of tau_u
+    tau_u_range: ${main_tau_u_range}
+    # Range of tau_w
+    tau_w_range: ${main_tau_w_range}
+    a_range: ${main_a_range}
+    b_range: ${main_b_range}
+    q: ${main_q}
+    num_out_neuron: ${bottleneck_neurons}
+    use_u_rest: ${train_u0}
+    train_u0: ${train_u0}
+    train_thr: ${train_thr}
+    unroll: ${unroll_factor}
+    train_tau: ${tau_training}
+decoder:
+  l1:
+    cell: ${cell}
+    input_size: ${bottleneck_neurons}
+    n_neurons: ${dec_l1_neurons}
+    use_recurrent: True
+    thr: ${thr}
+    # gain for feedforward weight initialization
+    ff_gain: 1.0
+    # Range of tau_u
+    tau_u_range: ${main_tau_u_range}
+    # Range of tau_w
+    tau_w_range: ${main_tau_w_range}
+    a_range: ${main_a_range}
+    b_range: ${main_b_range}
+    q: ${main_q}
+    use_u_rest: ${train_u0}
+    train_u0: ${train_u0}
+    train_thr: ${train_thr}
+    unroll: ${unroll_factor}
+    train_tau: ${tau_training}
+  l2:
+    cell: ${cell}
+    input_size: ${dec_l1_neurons}
+    n_neurons: ${dec_l2_neurons}
+    use_recurrent: True
+    thr: ${thr}
+    # gain for feedforward weight initialization
+    ff_gain: 1.0
+    # Range of tau_u
+    tau_u_range: ${main_tau_u_range}
+    # Range of tau_w
+    tau_w_range: ${main_tau_w_range}
+    a_range:  ${main_a_range}
+    b_range: ${main_b_range}
+    q: ${main_q}
+    use_u_rest: ${train_u0}
+    train_u0: ${train_u0}
+    train_thr: ${train_thr}
+    unroll: ${unroll_factor}
+    train_tau: ${tau_training}
+    compile: True
+  l_out:
+    cell: li
+    input_size: ${dec_l2_neurons}
+    n_neurons: ${dec_lout_neurons}
+    train_tau_u_method: ${tau_training}
+    tau_u_range: [1, 10]
+    unroll: ${unroll_factor}
+
+
+
+# Number of epochs
+n_epochs: 10
+
+
+# Metric tracking
+tracking_metric: val_si_snr
+tracking_mode: max
+
+# optimizer parameters
+# learning rate of the optimizer
+lr: 0.0005
+factor: 0.1
+patience: 0
+min_lr: 1e-7
+# This control the percentage of increase (or decrease) that should happend for 
+# a epoch to be consider good (default is 1%), see reduceLROnPlateau  threshold parameter.
+plateau_threshold: 0.005
+
+# warm start, the lr is fixed at fast_batch_lr_factor*lr for the first num_fast_batch
+num_fast_batch: 3000
+fast_batch_lr_factor: 10
+grad_norm: 10
+skip_first_n: 50
+
+loss:
+  # Spectral loss parameters (cf. https://arxiv.org/abs/2008.01160)
+  n_mels: 128 # number of bins in the mel-scale spectrogram (this is the features dimension of the spectrogram)
+  min_window: 6 # min size of the FFT windows in power of two 
+  max_window: 11 # max size of the FTT windows in power of two
+  spectral_loss_gain: 1.0
+  # the total loss have 4 part represented by their weighting coefficient
+  # w_sc, w_log_mag, w_lin_mag, w_phs, soundstream loss use w_lin_mag: 1.0 and w_lin_mag: window
+  w_sc: 0.0 # normalized scaled difference between spectrum magnitude
+  w_log_mag: 1.0 #  float or "window" if window use the same scaling than in soundstream
+  w_lin_mag: 1.0 # difference between spectrum magnitude
+  w_phs: 0.0 # phase regression loss
+  mag_distance: L1 # distance between spectral magnitude, L1 or L2, only used for w_lin_mag (L1 for soundstream)
+  mag_distance_log: L1 # distance between log spectral magnitude, L1 or L2, only used for w_log_mag (L2 for soundstream)
+  mel_scale: htk # slaney or htk
+  norm: none # slaney or "none"
+  mse_loss_gain: 1.0 # how much weight put to the generative loss
+  temp: 10.0 # temperature for Gumbel, higher value converge toward uniform distribution
+  min_temp: 1.0
+  temp_decay: 0.95
+  transition_begin: 5000 # when to start to decay in number of batch
+  transition_steps: 2000 # how much batch to way for the next transition 
+  spectrum: "mel" # stft, mel, chroma
+
+
+
+# regularization parameters
+min_spike_prob: [0.05, 0.005, 0.05, 0.05] # , 0.1]
+max_spike_prob: [0.1, 0.012, 0.1, 0.3] #, 0.2]
+min_layer_coeff: [10.0, 10.0, 10.0, 10.0] #, 10.0] # encourage the first layer to spike
+max_layer_coeff: [10.0, 100, 10.0, 10.0] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
+check_val_every_n_epoch: 1
+
+random_seed: 44

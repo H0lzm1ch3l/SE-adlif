@@ -8,7 +8,8 @@ random_seed: 42
 logdir: ./results
 
 datadir: ./data
-
+cachedir: ./data/cache
+ckpt_path: null
 device: cuda:0
 
 hydra:  

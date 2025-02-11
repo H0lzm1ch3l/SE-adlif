@@ -5,36 +5,61 @@ defaults:
 
 exp_name: ECG_EF_adLIF_2layer
 
-# Which cell to use
-cell: ef_adlif
-
-# number of neurons
-n_neurons: 36
-
-# Whether to use a two-layer network
-two_layers: true
-
-# Factor for reparametrization of a and b (see paper)
-q: 60
-
 # Parameters of SLAYER
 alpha: 5
 c: 0.2
+dt: 1.0
+
+# Whether to use a two-layer network
+two_layers: true
+l1:
+  # Which cell to use
+  cell: ef_adlif
+  # input size of ECG
+  input_size: 4
+  # number of neurons
+  n_neurons: 36
+  # Range of tau_u
+  tau_u_range: [5, 25]
+  # Range of tau_w
+  tau_w_range: [60, 300]
+  # Factor for reparametrization of a and b (see paper)
+  q: 60
+  alpha: ${alpha}
+  c: ${c}
+  dt: ${dt}
+l2:
+  # Which cell to use
+  cell: ef_adlif
+  input_size: 36
+  # number of neurons
+  n_neurons: 36
+
+  # Range of tau_u
+  tau_u_range: [5, 25]
+
+  # Range of tau_w
+  tau_w_range: [60, 300]
+  # Factor for reparametrization of a and b (see paper)
+  q: 60
+  # input size
+  alpha: ${alpha}
+  c: ${c}
+  dt: ${dt}
+l_out:
+  input_size: 36
+  n_neurons: ${dataset.num_classes}
+  # Time constant of output layer 
+  tau_u_range: [3, 3]
+  dt: ${dt}
+
+
 
 # Number of epochs
 n_epochs: 400
 
-# Range of tau_u
-tau_u_range: [5, 25]
-
-# Range of tau_w
-tau_w_range: [60, 300]
-
 # Dropout rate
 dropout: 0.15
-
-# Time constant of output layer 
-tau_out_range: [3,3]
 
 # Batch size
 batch_size: 64
@@ -52,5 +77,3 @@ lr: 0.01
 factor: 0.9
 patience: 9999 # no lr decay
 
-# input size of ECG
-input_size: 4
