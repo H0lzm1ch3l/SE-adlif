@@ -31,7 +31,7 @@ class LIF(Module):
         self.out_features = cfg.n_neurons
         self.dt = cfg.get('dt', 1.0)
         self.tau_u_range = cfg.tau_u_range
-        self.train_tau_u_method = cfg.get('train_tau_u_method', 'interpolation')
+        self.train_tau = cfg.get('train_tau', 'interpolation')
         self.unroll = cfg.get('unroll', 10)
         self.use_recurrent = cfg.get('use_recurrent', True)
         self.ff_gain = cfg.get('ff_gain', 1.0)
@@ -62,7 +62,7 @@ class LIF(Module):
         else:
             # registering an empty size tensor is required for the static analyser
             self.register_buffer("recurrent", torch.empty(size=()))
-        self.tau_u_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_u_method)(
+        self.tau_u_trainer: TauTrainer = get_tau_trainer_class(self.train_tau)(
             self.out_features,
             self.dt,
             self.tau_u_range[0],
@@ -111,8 +111,8 @@ class LIF(Module):
                 return step_fn(recurrent, alpha, thr, u_rest, carry, cur)
 
             return generic_scan_with_states(wrapped_step, (u0, z0), x, self.unroll)
-        self.wrapped_scan = torch.compile(wrapped_scan)
-        self.wrapped_scan_with_states = torch.compile(wrapped_scan_with_states)
+        self.wrapped_scan = wrapped_scan
+        self.wrapped_scan_with_states = wrapped_scan_with_states
 
     def reset_parameters(self):
         self.tau_u_trainer.reset_parameters()

@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 import hydra
 from torch.utils.data import Dataset
 import torch
@@ -75,15 +75,10 @@ def copy_wave_files_with_path_names(root_path, destination_path):
     destination_path.mkdir(parents=True, exist_ok=True)
 
     # Find all .wav files recursively in the root directory
-    for wav_file in root_path.rglob("*.wav"):
-        # Get the parts of the path between root_path and the file
-        relative_parts = wav_file.relative_to(root_path).parent.parts
-        # Generate the new filename: n1_n2_..._originalfilename.wav
-        new_name = "_".join(relative_parts) + "_" + wav_file.name
-        # Define the full destination path
-        destination_file = destination_path / new_name
-        # Copy the file to the new location
-        shutil.copy2(wav_file, destination_file)
+    for i, wav_file in enumerate(sorted(root_path.rglob("*.wav"))):
+        destination_file = destination_path / f"{i}.wav"
+        # move the file to the new location
+        shutil.move(wav_file, destination_file)
 
 
 def process_resampling_and_normalize(wav_file, output_path, target_sample_rate, norm_func):
@@ -91,6 +86,7 @@ def process_resampling_and_normalize(wav_file, output_path, target_sample_rate, 
     waveform, sample_rate = torchaudio.load(wav_file)
 
     with torch.no_grad():
+        # if sample_rate == target_sample_rate resample is the identity
         waveform = torchaudio.functional.resample(
             waveform, orig_freq=sample_rate, new_freq=target_sample_rate,
             resampling_method='sinc_interp_kaiser'
@@ -177,8 +173,8 @@ norm_map = {
 class LibriTTS(Dataset):
     def __init__(
         self,
-        save_to: str,
-        cache_path: str = None,
+        save_to: Union[str, Path],
+        cache_path: Union[str, Path],
         sampling_freq: int = 24_000,
         sample_length: int = -1,
         normalization: str = "none",
@@ -228,7 +224,6 @@ class LibriTTS(Dataset):
         self.get_metadata = get_metadata
         self.norm_type = normalization
         self.norm_func = norm_map[normalization]
-        # self.root_dir = Path(download_root)
         self.cache_path = Path(cache_path) / "LibriTTS"
         split = "debug"
         if not debug:
@@ -241,9 +236,7 @@ class LibriTTS(Dataset):
         if (full_split_dir).exists() and any((full_split_dir).iterdir()):
             print("directory already exist")
         else:
-            # for now only get debug
             copy_wave_files_with_path_names(try_path, full_split_dir)
-        # 24_000/full split exist
 
         if not freq_split_dir.exists() or not any(freq_split_dir.iterdir()):
             # resample
@@ -252,7 +245,7 @@ class LibriTTS(Dataset):
                 full_split_dir, freq_split_dir, 24_000, sampling_freq, norm_func=self.norm_func
             )
         print(f"Wave files are resampled to {sampling_freq}Hz")
-        self.wave_files_path = list(freq_split_dir.rglob("*.wav"))
+        self.wave_files_path = list(sorted(freq_split_dir.rglob("*.wav")))
         # associate a chunk idx with a file_path and starting sample idx
         chunk_map = load_chunk_map(freq_split_dir / f"{sample_length}_map.pkl")
         if chunk_map is None:
@@ -303,11 +296,9 @@ class CompressLibri(pl.LightningDataModule):
         self,
         data_path: str,
         cache_path: str = None,
-        max_sample: int = -1,
         sampling_freq: int = 24_000,
         sample_length: int = -1,
         prediction_delay: int = 0,
-        zero_input_proba: float = 0,
         batch_size: int = 32,
         num_workers: int = 1,
         fits_into_ram: bool = False,
@@ -323,7 +314,6 @@ class CompressLibri(pl.LightningDataModule):
         self.fits_into_ram = fits_into_ram
         self.collate_fn = PadTensors(require_padding=False)
         self.normalization = normalization
-        self.max_sample = max_sample
         
         if not os.path.isabs(data_path):
             cwd = hydra.utils.get_original_cwd()
@@ -357,30 +347,8 @@ class CompressLibri(pl.LightningDataModule):
             target_transform=None,
             full_transform=delay_transform,
         )
-        # self.cache_path = (
-        #     cache_path
-        #     + f"/LibriTTS_hz-{sampling_freq}_sl-{sample_length}_norm-{normalization}"
-        # )
         
-
-        # def zero_inputs(inputs, targets, block_idx):
-        #     rd = torch.rand(()).item()
-        #     if rd < zero_input_proba:
-        #         inputs = torch.zeros_like(inputs)
-        #         targets = torch.zeros_like(targets)
-        #     return inputs, targets, block_idx
-        # def compose_full_transform(inputs, targets, block_idx):
-        #     inputs, targets, block_idx = delay_transform(inputs, targets, block_idx)
-        #     return zero_inputs(inputs, targets, block_idx)
-
-        # self.train_dataset_ = DiskCachedDataset(
-        #     self.train_dataset_,
-        #     cache_path=self.cache_path,
-        #     full_transform=compose_full_transform
-        # )
         n_sample = len(self.train_dataset_)
-        # always aim for 10*batch_size samples per valid and test set rest is train set
-        # this prevents that too much data is used for validation when the dataset is very large
         i = 10
         while i > 1 and n_sample - 2*batch_size*i < 0:
             i -= 1
@@ -412,12 +380,8 @@ class CompressLibri(pl.LightningDataModule):
                 target_transform=None,
                 full_transform=delay_transform,
             )
-        # create a sampler for self.train_dataset, that randomly sub-sample "self.max_sample" samples from
-        # the total dataset length, this is not required if self.max_sample = -1 (total dataset)
-        if self.max_sample != -1:
-            self.train_sampler = torch.utils.data.RandomSampler(self.train_dataset_, replacement=False, num_samples=self.max_sample)
-        else:
-            self.train_sampler = None
+            
+
 
     def prepare_data(self):
         pass
@@ -432,7 +396,7 @@ class CompressLibri(pl.LightningDataModule):
     def train_dataloader(self):
         return DataLoader(
             self.data_train,
-            sampler=self.train_sampler,
+            sampler=None,
             shuffle=False,
             pin_memory=True,
             batch_size=self.batch_size,
