@@ -1,0 +1,157 @@
+# @package _global_
+
+defaults:
+  - /dataset: compress_libri
+
+enc_l1_neurons: 302
+enc_l2_neurons: 302
+dec_l1_neurons: 302
+dec_l2_neurons: 302
+dec_lout_neurons: 256
+bottleneck_neurons: 16
+main_tau_u_range:
+- 5
+- 100
+train_u0: true
+train_thr: true
+thr:
+- 1.0
+- 1.0
+cell: lif
+ff_gain: 10
+tau_training: interpolationExpSigmoid
+exp_name: compres_libri_SE_adLIF
+alpha: 5.0
+c: 0.2
+dt: 1.0
+unroll_factor: 256
+compile: False
+
+encoder:
+  dropout: 0.0
+  l1:
+    cell: ${cell}
+    input_size: 1
+    n_neurons: ${enc_l1_neurons}
+    use_recurrent: false
+    thr: ${thr}
+    ff_gain: ${ff_gain}
+    tau_u_range: ${main_tau_u_range}
+    use_u_rest: ${train_u0}
+    train_u0: ${train_u0}
+    train_thr: ${train_thr}
+    compile: true
+    train_tau: ${tau_training}
+    alpha: ${alpha}
+    c: ${c}
+    dt: ${dt}
+    unroll: ${unroll_factor}
+
+  l2:
+    cell: ${cell}
+    input_size: ${enc_l1_neurons}
+    n_neurons: ${enc_l2_neurons}
+    use_recurrent: true
+    thr: ${thr}
+    ff_gain: ${ff_gain}
+    tau_u_range: ${main_tau_u_range}
+    num_out_neuron: ${bottleneck_neurons}
+    use_u_rest: ${train_u0}
+    train_u0: ${train_u0}
+    train_thr: ${train_thr}
+    train_tau: ${tau_training}
+    alpha: ${alpha}
+    c: ${c}
+    dt: ${dt}
+    unroll: ${unroll_factor}
+
+decoder:
+  dropout: 0.0
+  light_decoder: false
+  l1:
+    cell: ${cell}
+    input_size: ${bottleneck_neurons}
+    n_neurons: ${dec_l1_neurons}
+    use_recurrent: true
+    thr: ${thr}
+    ff_gain: ${ff_gain}
+    tau_u_range: ${main_tau_u_range}
+    use_u_rest: ${train_u0}
+    train_u0: ${train_u0}
+    train_thr: ${train_thr}
+    train_tau: ${tau_training}
+    alpha: ${alpha}
+    c: ${c}
+    dt: ${dt}
+    unroll: ${unroll_factor}
+
+  l2:
+    cell: ${cell}
+    input_size: ${dec_l1_neurons}
+    n_neurons: ${dec_l2_neurons}
+    use_recurrent: true
+    thr: ${thr}
+    ff_gain: ${ff_gain}
+    tau_u_range: ${main_tau_u_range}
+    use_u_rest: ${train_u0}
+    train_u0: ${train_u0}
+    train_thr: ${train_thr}
+    train_tau: ${tau_training}
+    alpha: ${alpha}
+    c: ${c}
+    dt: ${dt}
+    unroll: ${unroll_factor}
+
+  l_out:
+    cell: li
+    input_size: ${dec_l2_neurons}
+    use_recurrent: false
+    n_neurons: ${dec_lout_neurons}
+    reduce: mean
+    train_tau_u_method: ${tau_training}
+    tau_u_range:
+    - 1
+    - 10
+    dt: ${dt}
+    unroll: ${unroll_factor}
+
+n_epochs: 10
+tracking_metric: val_si_snr
+tracking_mode: max
+lr: 0.0005
+factor: 0.1
+patience: 0
+min_lr: 1.0e-07
+plateau_threshold: 0.005
+
+num_fast_batch: 0
+fast_batch_lr_factor: 10
+grad_norm: 10
+skip_first_n: 50
+
+loss:
+  n_mels: 128
+  min_window: 6
+  max_window: 11
+  spectral_loss_gain: 1.0
+  w_sc: 0.0
+  w_log_mag: 1.0
+  w_lin_mag: 1.0
+  w_phs: 0.0
+  mag_distance: L1
+  mag_distance_log: L1
+  mel_scale: htk
+  norm: none
+  mse_loss_gain: 1.0
+  temp: 10.0
+  min_temp: 1
+  temp_decay: 0.95
+  transition_begin: 5000
+  transition_steps: 2000
+  spectrum: mel
+min_spike_prob: [0.05, 0.005, 0.05, 0.05]
+max_spike_prob: [0.5, 0.012, 0.5, 0.3]
+min_layer_coeff: [10, 10, 10, 10]
+max_layer_coeff: [10, 100, 10, 10]
+
+check_val_every_n_epoch: 1

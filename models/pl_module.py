@@ -4,7 +4,6 @@ import torch
 import torchmetrics
 from torch.nn import CrossEntropyLoss, MSELoss
 from omegaconf import DictConfig
-from pytorch_lightning.utilities import grad_norm
 
 from models.alif import EFAdLIF, SEAdLIF
 from models.li import LI
@@ -32,31 +31,27 @@ class MLPSNN(pl.LightningModule):
         self.output_size = cfg.dataset.num_classes
         self.tracking_metric = cfg.tracking_metric
         self.tracking_mode = cfg.tracking_mode
-        self.lr = cfg.lr 
+        self.batch_size = cfg.dataset.batch_size
+        self.dropout = cfg.dropout
+
 
         # For learning rate scheduling (used for oscillation task)
+        self.lr = cfg.lr
         self.factor = cfg.factor
         self.patience = cfg.patience
 
         self.auto_regression =  cfg.get('auto_regression', False)
-        self.output_size = cfg.dataset.num_classes
-        self.batch_size = cfg.dataset.batch_size
 
         # Define the model
-        self.cell = layer_map[cfg.cell]
-        self.l1 = self.cell(cfg)
-        self.dropout = cfg.dropout
+        self.l1 = layer_map[cfg.l1.cell](cfg.l1)
         if cfg.two_layers:
-            cfg.input_size = cfg.n_neurons
-            self.l2 = self.cell(cfg)
-        cfg.input_size = cfg.n_neurons
-        self.out_layer = LI(cfg)
+            self.l2 = layer_map[cfg.l2.cell](cfg.l2)
+        self.out_layer = LI(cfg.l_out)
         
         self.output_func = cfg.get('loss_agg', 'softmax')
         self.init_metrics_and_loss()
         self.save_hyperparameters()
 
-    # @torch.compile
     def forward(
         self, inputs: torch.Tensor) -> tuple[torch.Tensor, list[torch.Tensor]]:
         s1 = self.l1.initial_state(inputs.shape[0], inputs.device)
@@ -78,7 +73,6 @@ class MLPSNN(pl.LightningModule):
                 out, s2 = self.l2(out, s2)
                 out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
             out, s_out = self.out_layer(out, s_out)
-            # out[:,0] += 100
             out_sequence.append(out)
             
         return torch.stack(out_sequence, dim=1)

@@ -4,31 +4,39 @@ defaults:
   - /dataset: bsd
 
 exp_name: BSD_LIF
-
-# Which cell to use
-cell: lif
-
-# number of neurons
-n_neurons: 512
-
 # Whether to use a two-layer network
 two_layers: false
-
+# Dropout rate
+dropout: 0
 # Parameters of SLAYER
 alpha: 5
 c: 0.2
+dt: 1.0
+
+l1:
+  # Which cell to use
+  cell: lif
+  # input size of ECG
+  input_size: 10
+  # number of neurons
+  n_neurons: 512
+  # Range of tau_u
+  tau_u_range: [5, 50]
+  # Factor for reparametrization of a and b (see paper)
+  q: 120
+  alpha: ${alpha}
+  c: ${c}
+  dt: ${dt}
+
+l_out:
+  input_size: 512
+  n_neurons: ${dataset.num_classes}
+  # Time constant of output layer 
+  tau_u_range: [15, 15]
+  dt: ${dt}
 
 # Number of epochs
 n_epochs: 400
-
-# Range of tau_u
-tau_u_range: [5, 50]
-
-# Dropout rate
-dropout: 0
-
-# Time constant of output layer 
-tau_out_range: [15, 15]
 
 # Batch size
 batch_size: 128
@@ -45,6 +53,3 @@ tracking_mode: max
 lr: 0.01
 factor: 0.9
 patience: 9999 # no lr decay
-
-# input size of BSD
-input_size: 10

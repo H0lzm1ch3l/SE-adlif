@@ -1,0 +1,19 @@
+defaults:
+  - _self_
+  - override hydra/job_logging: none # to disable hydra logging
+# options: si_snr or visqol
+metric: si_snr
+source_wave_path: 'path/to/source/waves'
+pred_wave_path: 'path/to/model/predictions'
+
+logdir: ./results
+exp_name: eval_metrics
+
+hydra:
+  job:
+    chdir: true
+  run:
+    dir: ${logdir}/hydra/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: ${logdir}/hydra/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}

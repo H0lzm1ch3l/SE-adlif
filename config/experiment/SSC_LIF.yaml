@@ -5,30 +5,49 @@ defaults:
 
 exp_name: SSC_LIF
 
-# Which cell to use
-cell: lif
-
-# number of neurons
-n_neurons: 720
 
 # Whether to use a two-layer network
 two_layers: true
-
-# Parameters of SLAYER
-alpha: 5
+# SLAYER parameters
+alpha: 5.0
 c: 0.1
-
-# Number of epochs
-n_epochs: 40
-
-# Range of tau_u
-tau_u_range: [5, 25]
-
+dt: 1.0
 # Dropout rate
 dropout: 0.15
 
-# Time constant of output layer 
-tau_out_range: [15, 15]
+l1:
+  # Which cell to use
+  cell: lif
+# input size of preprocessed SHD
+  input_size: 140
+  # number of neurons
+  n_neurons: 720
+  # Range of tau_u
+  tau_u_range: [5, 25]
+  alpha: ${alpha}
+  c: ${c}
+  dt: ${dt}
+l2:
+  # Which cell to use
+  cell: lif
+  input_size: 720
+  # number of neurons
+  n_neurons: 720
+
+  # Range of tau_u
+  tau_u_range: [5, 25]
+  # input size
+  alpha: ${alpha}
+  c: ${c}
+  dt: ${dt}
+l_out:
+  input_size: 720
+  n_neurons: ${dataset.num_classes}
+  # Time constant of output layer 
+  tau_u_range: [15, 15]
+  dt: ${dt}
+# Number of epochs
+n_epochs: 40
 
 # Batch size
 batch_size: 256

@@ -8,12 +8,15 @@ import torch.utils.data
 # from tonic import DiskCachedDataset
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 import pytorch_lightning as pl
+import urllib3
 from datasets.utils.pad_tensors import PadTensors
 import numpy as np
 
 import scipy.io
 import torch
-
+import hydra
+from pathlib import Path
+import requests
 
 def convert_dataset_wtime(mat_data):
     X = mat_data["x"]
@@ -32,6 +35,28 @@ def convert_dataset_wtime(mat_data):
 
 
 class ECGLDM(pl.LightningDataModule):
+    files_to_url = {
+        'QTDB/QTDB_test.mat': 'https://raw.githubusercontent.com/byin-cwi/Efficient-spiking-networks/main/data/QTDB_test.mat',
+        'QTDB/QTDB_train.mat': 'https://raw.githubusercontent.com/byin-cwi/Efficient-spiking-networks/main/data/QTDB_train.mat'
+    }
+    url = 'https://api.github.com/repos/byin-cwi/Efficient-spiking-networks/contents/data'
+    
+    @staticmethod
+    def download_if_not_exist(base_path:Path, files_to_url: dict[str, str]):
+        files_names = list(files_to_url.keys())
+        if not (base_path / str(files_names[0])).exists():
+            for k, v in files_to_url.items():
+                response = requests.get(v)
+                # Check if the request was successful
+                if response.status_code == 200:
+                    file_path = base_path / k
+                    file_path.parent.mkdir(parents=True, exist_ok=True)
+                    with file_path.open('wb') as file:
+                        file.write(response.content)
+                else:
+                    raise requests.exceptions.ConnectionError
+        
+            
     def __init__(
         self,
         data_path: str,
@@ -44,7 +69,11 @@ class ECGLDM(pl.LightningDataModule):
         num_classes: int = 6,  # for hydra
     ) -> None:
         super().__init__()
-        self.data_path = data_path
+        if not os.path.isabs(data_path):
+            cwd = hydra.utils.get_original_cwd()
+            data_path = os.path.abspath(os.path.join(cwd, data_path))
+        self.data_path = Path(data_path)
+
         self.cache_root = data_path if cache_root is None else cache_root
         self.valid_fraction = valid_fraction
         self.batch_size = batch_size
@@ -54,7 +83,11 @@ class ECGLDM(pl.LightningDataModule):
 
         self.collate_fn = PadTensors(batch_first=True)
         self.generator = torch.Generator().manual_seed(random_seed)
+        
+        self.data_path.mkdir(exist_ok=True, parents=True)
+        self.download_if_not_exist(self.data_path, self.files_to_url)
 
+        
     def prepare_data(self):
         assert os.path.exists(self.data_path), f"Data path {self.data_path} does not exist"
         assert os.path.exists(
