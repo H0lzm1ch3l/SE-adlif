@@ -4,7 +4,6 @@ from omegaconf import DictConfig
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import logging
 from models.pl_module_compress import MLPSNN
-# import debugpy
 
 from pytorch_lightning.strategies import SingleDeviceStrategy
 import os
@@ -65,7 +64,6 @@ def main(cfg: DictConfig):
         callbacks=callbacks,
         logger=logger,
         max_epochs=cfg.n_epochs,
-        # gradient_clip_val=1.5,
         enable_progress_bar=True,
         strategy=SingleDeviceStrategy(device=cfg.device),
         num_sanity_val_steps=1,

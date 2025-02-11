@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - /dataset: compress_libri_full
+  - /dataset: compress_libri
 
 enc_l1_neurons: 302
 enc_l2_neurons: 302
@@ -9,27 +9,16 @@ dec_l1_neurons: 302
 dec_l2_neurons: 302
 dec_lout_neurons: 256
 bottleneck_neurons: 16
-main_a_range:
-- 0
-- 4
-main_b_range:
-- 0
-- 2
 main_tau_u_range:
 - 5
-- 300
-main_tau_w_range:
-- 30
-- 300
+- 100
 train_u0: true
 train_thr: true
 thr:
 - 1.0
 - 1.0
 cell: lif
-main_q: 120
 ff_gain: 10
-step_type: linear
 tau_training: interpolationExpSigmoid
 exp_name: compres_libri_SE_adLIF
 unroll_factor: 256
@@ -43,14 +32,9 @@ encoder:
     thr: ${thr}
     ff_gain: ${ff_gain}
     tau_u_range: ${main_tau_u_range}
-    tau_w_range: ${main_tau_w_range}
-    a_range: ${main_a_range}
-    b_range: ${main_b_range}
-    q: ${main_q}
     use_u_rest: ${train_u0}
     train_u0: ${train_u0}
     train_thr: ${train_thr}
-    step_type: ${step_type}
     compile: true
     train_tau: ${tau_training}
     unroll: ${unroll_factor}
@@ -62,15 +46,10 @@ encoder:
     thr: ${thr}
     ff_gain: ${ff_gain}
     tau_u_range: ${main_tau_u_range}
-    tau_w_range: ${main_tau_w_range}
-    a_range: ${main_a_range}
-    b_range: ${main_b_range}
-    q: ${main_q}
     num_out_neuron: ${bottleneck_neurons}
     use_u_rest: ${train_u0}
     train_u0: ${train_u0}
     train_thr: ${train_thr}
-    step_type: ${step_type}
     unroll: ${unroll_factor}
     train_tau: ${tau_training}
     compile: true
@@ -85,15 +64,10 @@ decoder:
     thr: ${thr}
     ff_gain: ${ff_gain}
     tau_u_range: ${main_tau_u_range}
-    tau_w_range: ${main_tau_w_range}
-    a_range: ${main_a_range}
-    b_range: ${main_b_range}
-    q: ${main_q}
     use_u_rest: ${train_u0}
     train_u0: ${train_u0}
     train_thr: ${train_thr}
     unroll: ${unroll_factor}
-    step_type: ${step_type}
     train_tau: ${tau_training}
     compile: true
   l2:
@@ -104,15 +78,10 @@ decoder:
     thr: ${thr}
     ff_gain: ${ff_gain}
     tau_u_range: ${main_tau_u_range}
-    tau_w_range: ${main_tau_w_range}
-    a_range: ${main_a_range}
-    b_range: ${main_b_range}
-    q: ${main_q}
     use_u_rest: ${train_u0}
     train_u0: ${train_u0}
     train_thr: ${train_thr}
     unroll: ${unroll_factor}
-    step_type: ${step_type}
     train_tau: ${tau_training}
     compile: true
   l_out:
@@ -129,7 +98,7 @@ decoder:
     unroll: ${unroll_factor}
     compile: true
 alpha: 5.0
-c: 0.1
+c: 0.2
 dt: 1.0
 n_epochs: 10
 tracking_metric: val_si_snr
@@ -167,9 +136,9 @@ loss:
   spectrum: mel
   perceptual_weighting: false
   scale_invariance: false
-min_spike_prob: [0.2, 0.005, 0.2, 0.2]
-max_spike_prob: [0.7, 0.02, 0.7, 0.7]
-min_layer_coeff: [100, 10, 0, 0]
+min_spike_prob: [0.05, 0.005, 0.05, 0.05]
+max_spike_prob: [0.5, 0.012, 0.5, 0.3]
+min_layer_coeff: [10, 10, 10, 10]
 max_layer_coeff: [10, 100, 10, 10]
 compile: true
 check_val_every_n_epoch: 1
