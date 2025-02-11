@@ -1,10 +1,13 @@
 defaults:
   - _self_
   - override hydra/job_logging: none # to disable hydra logging
-path_to_model_output: /home/romirates/results/se_adlif/47/3
-wave_files_path: /home/romirates/results/16000_peak
+# options: si_snr or visqol
+metric: si_snr
+source_wave_path: 'path/to/source/waves'
+pred_wave_path: 'path/to/model/predictions'
+
 logdir: ./results
-exp_name: comp_metric_run
+exp_name: eval_metrics
 
 hydra:
   job:

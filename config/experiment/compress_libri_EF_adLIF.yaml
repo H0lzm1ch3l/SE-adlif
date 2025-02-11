@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - /dataset: compress_libri_full
+  - /dataset: compress_libri
 
 enc_l1_neurons: 300
 enc_l2_neurons: 300
@@ -9,21 +9,21 @@ dec_l1_neurons: 300
 dec_l2_neurons: 300
 dec_lout_neurons: 256
 bottleneck_neurons: 16
-main_a_range: [0, 4]
+main_a_range: [0, 1]
 main_b_range: [0, 2]
 main_tau_u_range: [5, 25]
 main_tau_w_range: [30, 300]
 train_u0: True
 train_thr: True
 thr: [1.0, 1.0]
-cell: se_adlif
-main_q: 120
+cell: ef_adlif
+main_q: 20
  # adlif step function: 
  #    "cos" reparametized "a" adapt parameter in terms of cos(w), with trainable w 
  #    "linear" standard step function 
 step_type: linear
 tau_training: interpolationExpSigmoid
-exp_name: compres_libri_SE_adLIF
+exp_name: compres_libri_EF_adLIF
 unroll_factor: 256
 encoder:
   dropout: 0.0
@@ -198,7 +198,7 @@ loss:
 
 # regularization parameters
 min_spike_prob: [0.05, 0.005, 0.05, 0.05] # , 0.1]
-max_spike_prob: [0.1, 0.02, 0.1, 0.3] #, 0.2]
+max_spike_prob: [0.1, 0.012, 0.1, 0.3] #, 0.2]
 min_layer_coeff: [10.0, 10.0, 10.0, 10.0] #, 10.0] # encourage the first layer to spike
 max_layer_coeff: [10.0, 100, 10.0, 10.0] # , 10.0] # here we may encourage lower spike for the second layer to encourage compression
 compile: True

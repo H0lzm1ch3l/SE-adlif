@@ -3,7 +3,7 @@ import pytorch_lightning as pl
 import torch
 import torchmetrics
 from torch.nn import CrossEntropyLoss, MSELoss
-from omegaconf import DictConfig, open_dict
+from omegaconf import DictConfig,
 from pytorch_lightning.utilities import grad_norm
 import matplotlib
 import torchmetrics.audio
@@ -150,8 +150,6 @@ class GenerativeSpectralLoss(torch.nn.Module):
         min_temp: float = 1.0,
         transition_begin: int = 0,
         transition_steps: int = 1,
-        
-        
         *args,
         **kwargs,
     ):
@@ -199,11 +197,7 @@ class GenerativeSpectralLoss(torch.nn.Module):
         self.de_quantize = (
             linear_dequantize if self.discretization == "linear" else log_dequantize
         )
-
-        # take the centers of the bin edges
-        # used for reconstruction of the quantized signal
         self.gen_loss = torch.nn.CrossEntropyLoss()
-    #TODO: use cond as get_temp have a control flow it is not compilable
     
     @torch.compiler.disable
     def get_temp(self, forced_temp=None):
@@ -306,17 +300,7 @@ class MLPSNN(pl.LightningModule):
         
         windows_length = [2**i for i in range(cfg.loss.min_window, cfg.loss.max_window+1)]
         windows_hops = [w//4 for w in windows_length]
-
-        # this is pretty standard that n_fft = windows_length, 
-        # if n_fft < windows_length we loose information
-        # if n_fft > windows_length the frequencies are oversampled/interpolated, 
-        # As the delta freq = sampling_freq/win_length,
-        # Audio framework recommands:
-        # n_fft = windows_length*2**i
-        # https://support.ircam.fr/docs/AudioSculpt/3.0/co/FFT%20Size.html
-        # Issues for us, we need:
-        # n_fft >> n_mels as low value imply empty filter 
-        # n_fft/2 <= sample_length -  skip_first_n
+        
         n_fft = [2**cfg.loss.max_window for w in windows_length]
         scale = cfg.loss.spectrum
         if scale == 'stft':
@@ -326,7 +310,7 @@ class MLPSNN(pl.LightningModule):
             w_log_mag = [math.sqrt(w/2) for w in windows_length]
         
         # norm convert "none" to None
-        norm=cfg.loss.get('norm', 'slaney')
+        norm = cfg.loss.get('norm', 'slaney')
         if norm == 'none':
             norm = None
         spectral_loss = MultiResolutionSTFTLoss(
@@ -371,9 +355,7 @@ class MLPSNN(pl.LightningModule):
             )
         else:
             self.loss = spectral_loss
-        # if cfg.get("compile", False):
-        #    self.loss = torch.compile(self.loss, dynamic=True,)
-        # regularization parameters
+            
         self.min_spike_prob = cfg.min_spike_prob
         self.max_spike_prob = cfg.max_spike_prob
         self.min_layer_coeff = cfg.min_layer_coeff
@@ -402,7 +384,7 @@ class MLPSNN(pl.LightningModule):
         self.model.apply_parameter_constraints()
         
         self.loss.batch_count += 1
-    # on_train_epoch_end will have the val_{metric} https://lightning.ai/docs/pytorch/latest/common/lightning_module.html#hooks 
+
     def on_train_epoch_end(self):
         if (self.loss.batch_count > self.num_fast_batch):
             sch = self.lr_schedulers()
@@ -425,15 +407,11 @@ class MLPSNN(pl.LightningModule):
         Returns:
             (): _description_
         """
-        # compute softmax for every time-steps with respect to
-        # the number of class
+
         targets = targets[:, 1 + self.skip_first_n :]
         loss = self.loss(
             outputs[:, self.skip_first_n + self.prediction_delay :], targets
         )
-        # block_idx = block_idx[:, self.prediction_delay :].unsqueeze(-1)
-        # outputs_reduce = outputs[:, self.skip_first_n + self.prediction_delay :]
-
         return loss
 
     def update_and_log_metrics(
@@ -466,10 +444,8 @@ class MLPSNN(pl.LightningModule):
         outputs = outputs[:, self.skip_first_n + self.prediction_delay :]
         if isinstance(self.loss, GenerativeSpectralLoss):
             outputs = self.loss.generate_wave(outputs, self.loss.get_temp())
-        # outputs_flat = outputs.reshape(-1, outputs.shape[-1])
-        # targets_flat = targets.reshape(-1, targets.shape[-1])
 
-        metrics(outputs[:,:-1].permute((0,2,1))[:,0], targets[:, 1:].permute((0,2,1))[:,0])
+        metrics(outputs[:,:-1].permute((0,2,1)), targets[:, 1:].permute((0,2,1)))
         self.log_dict(
             metrics,
             prog_bar=True,
@@ -553,7 +529,7 @@ class MLPSNN(pl.LightningModule):
         self.clip_gradients(
             opt, gradient_clip_val=self.grad_norm, gradient_clip_algorithm="norm"
         )
-        opt.step()
+        self.check_gradient(opt)
         self.log(
             "spectral_loss_temp",
             self.loss.get_temp(),
@@ -707,4 +683,19 @@ class MLPSNN(pl.LightningModule):
                 },
             },
         )
-
+    @torch.compiler.disable
+    def check_gradient(self, optimizer):
+        valid_gradients = True
+        un_valid_name = ""
+        for name, param in self.named_parameters():
+            if param.grad is not None:
+                valid_gradients = not (torch.isnan(param.grad).any() or torch.isinf(param.grad).any())
+                # valid_gradients = not (torch.isnan(param.grad).any())
+                if not valid_gradients:
+                    un_valid_name = name
+                    break
+        if valid_gradients:
+            optimizer.step()
+        else:
+            print(f"\ndetected inf or nan values in gradients at {un_valid_name}. not updating model parameters")
+            optimizer.zero_grad()

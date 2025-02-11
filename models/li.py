@@ -13,11 +13,7 @@ from module.tau_trainers import TauTrainer, get_tau_trainer_class
 import matplotlib.pyplot as plt
 import numpy as np
 from omegaconf import DictConfig
-reduce_map = {
-    'none': lambda x: x,
-    'mean': lambda x: torch.mean(x, dim=-1, keepdim=True),
-    'sum': lambda x: torch.sum(x, dim=-1, keepdim=True)
-}
+
 class LI(Module):
     __constants__ = ["in_features", "out_features"]
     in_features: int
@@ -54,8 +50,6 @@ class LI(Module):
             **factory_kwargs,
         )
         self.unroll = cfg.get('unroll', 10)
-        self.reduce_type = cfg.get('reduce', 'none')
-        self.reduce_fn = reduce_map[self.reduce_type]
         def step_fn(alpha, carry, x):
             u, = carry
             u = alpha * u + (1.0 - alpha)*x
@@ -72,14 +66,8 @@ class LI(Module):
         self.wrapped_scan = wrapped_scan
         if not cfg.get('compile', False):
             self.wrapped_scan = torch.compiler.disable(self.wrapped_scan, recursive=False)
-        #TODO: do not work properly in compile mode due to one states tuple shape
-        # maybe some errornous simplification
+        #TODO: do not work properly in compile mode due to 1D tuple shape
         self.wrapped_scan_with_states = torch.compiler.disable(wrapped_scan_with_states, recursive=False)        
-        # if cfg.get('compile', True):
-        #     self.wrapped_scan = torch.compile(wrapped_scan)
-        # else:
-        #     self.wrapped_scan = wrapped_scan
-        # self.wrapped_scan_with_states = wrapped_scan_with_states
         self.reset_parameters()
     
     def reset_parameters(self):
@@ -114,7 +102,7 @@ class LI(Module):
         current = F.linear(inputs, self.weight, self.bias)
         u, = self.initial_state(inputs.shape[0], device=inputs.device)
         decay_u = self.tau_u_trainer.get_decay()
-        return self.reduce_fn(self.wrapped_scan(u, current, decay_u))
+        return self.wrapped_scan(u, current, decay_u)
 
     @torch.no_grad()
     def forward_with_states(self, inputs) -> Tuple[Tensor, Tensor]:
@@ -122,7 +110,7 @@ class LI(Module):
         u, = self.initial_state(inputs.shape[0], device=inputs.device)
         decay_u = self.tau_u_trainer.get_decay()
         states, out = self.wrapped_scan_with_states(u, current, decay_u)
-        return states, self.reduce_fn(out)
+        return states, out
     
     def apply_parameter_constraints(self):
         self.tau_u_trainer.apply_parameter_constraints()
