@@ -1,8 +1,5 @@
-# class_path: datasets.pl_dataset.SHDLDM
-# init_args:
 _target_: datasets.oscillation.OscilatorTask
 name: Oscilation task
-required_model_size: small
 n_dof: 4
 mass_range: [1, 1]
 spring_range: [500, 10000]

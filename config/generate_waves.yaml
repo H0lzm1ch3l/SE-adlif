@@ -2,8 +2,8 @@ defaults:
   - _self_
   - override hydra/job_logging: none # to disable hydra logging
 ckpt_path: /path/to/ckpt/example.ckpt
-test_dir_path: "/path/to/libritts/location/"
-save_to: "/path/to/prediction/"
+source_wave_path: "/path/to/libritts/location/"
+pred_wave_path: "/path/to/prediction/"
 encoder_only: False
 
 logdir: ./results

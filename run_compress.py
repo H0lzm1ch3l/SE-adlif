@@ -44,7 +44,6 @@ def main(cfg: DictConfig):
         num_sanity_val_steps=1,
         check_val_every_n_epoch=cfg.check_val_every_n_epoch,
         )
-    ckpt_path = cfg.get('ckpt_path', None)
     trainer.fit(model, datamodule=datamodule,)
     result = trainer.test(model, ckpt_path="best", datamodule=datamodule)
     logging.info(f"Final result: {result}")

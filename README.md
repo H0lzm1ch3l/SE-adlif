@@ -27,7 +27,7 @@ python run.py experiment=<experiment_name> ++logdir=path/to/my/logdir ++datadir=
 **Notes:**
 - `datadir` is **mandatory** and should contain the datasets.
 - For SHD and SSC, data is downloaded automatically if not found at `datadir/SHDWrapper`.
-- BSD dataset is created on the fly, so `datadir` can point to an empty directory.
+- BSD and oscillation toy task, datasets are created on the fly, so `datadir` can point to an empty directory.
 - Results are stored in a local `results` folder unless `resultdir` is specified.
 - `<experiment_name>` refers to configurations in `./config/experiment/`.
 
@@ -64,7 +64,7 @@ To generate wave files from a checkpoint:
 generate_waves.py ckpt_path=/path/to/ckpt/example.ckpt source_wave_path=/path/to/libritts/location/ pred_wave_path=/path/to/prediction/ encoder_only=$encoder_flag
 ```
 - `$encoder_flag`: `true` or `false`.
-- `test_dir_path` can be a single `.wav` file or a directory containing `.wav` files.
+- `source_wave_path` can be a single `.wav` file or a directory containing `.wav` files.
 - If no valid `.wav` files exist, the clean test-set from LibriTTS (~9h of audio) is used.
 
 ### 2️⃣ Evaluating Generated Waves
