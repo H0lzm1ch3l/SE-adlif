@@ -8,7 +8,6 @@ from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 from datasets.utils.pad_tensors import PadTensors
 from datasets.utils.transforms import (
-    TakeEventByTime,
     Flatten,
 )
 import tonic

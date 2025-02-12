@@ -3,10 +3,7 @@ import pytorch_lightning as pl
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from datasets.utils.pad_tensors import PadTensors
-from functional.encode import poisson_encode
 import torch
-from torch.nn.functional import pad as torch_pad
-import random
 import matplotlib.pyplot as plt
 
 
@@ -110,11 +107,6 @@ class BurstSequenceDetection(Dataset):
     def __len__(self):
         return self.num_sample_per_epoch
 
-    # def plot_blueprint(self, index):
-    #     class_id = self.class_ids[index]
-    #     class_parameters = self.class_parameters[index]
-    #     means, variances, common_channels = class_parameters
-    #     sample = self.data[index][0].numpy()
 
 
 class BSDLDM(pl.LightningDataModule):
@@ -248,7 +240,6 @@ class BSDLDM(pl.LightningDataModule):
         )
 
 
-import numpy as np
 
 
 ###############################################

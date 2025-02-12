@@ -1,5 +1,5 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable, Optional, Union
+from concurrent.futures import ThreadPoolExecutor
+from typing import Optional, Union
 import hydra
 from torch.utils.data import Dataset
 import torch
@@ -175,7 +175,6 @@ class LibriTTS(Dataset):
     def __init__(
         self,
         save_to: Union[str, Path],
-        cache_path: Union[str, Path],
         sampling_freq: int = 24_000,
         sample_length: int = -1,
         normalization: str = "none",
@@ -225,7 +224,7 @@ class LibriTTS(Dataset):
         self.get_metadata = get_metadata
         self.norm_type = normalization
         self.norm_func = norm_map[normalization]
-        self.cache_path = Path(cache_path) / "LibriTTS"
+        self.cache_path = Path(save_to) / "cache/LibriTTS"
         split = "debug"
         if not debug:
             split = "train" if train else "test"
@@ -296,7 +295,6 @@ class CompressLibri(pl.LightningDataModule):
     def __init__(
         self,
         data_path: str,
-        cache_path: str = None,
         sampling_freq: int = 24_000,
         sample_length: int = -1,
         prediction_delay: int = 0,
@@ -338,7 +336,6 @@ class CompressLibri(pl.LightningDataModule):
 
         self.train_dataset_ = LibriTTS(
             save_to=data_path,
-            cache_path=cache_path,
             sampling_freq=sampling_freq,
             sample_length=sample_length,
             normalization=normalization,
@@ -371,7 +368,6 @@ class CompressLibri(pl.LightningDataModule):
             )
             self.test_dataset_ = LibriTTS(
                 save_to=data_path,
-                cache_path=cache_path,
                 sampling_freq=sampling_freq,
                 sample_length=sample_length,
                 normalization=normalization,

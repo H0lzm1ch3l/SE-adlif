@@ -320,7 +320,7 @@ def adlif_dataloder_loop(encoder_only, model, weights, prediction_delay, wave_li
     model = jax.jit(jax.vmap(model),)
     for wave in tqdm(wave_list_sorted, "evaluation"):
         inputs = torchaudio.load(str(wave))[0].T.unsqueeze(0)
-        inputs = 1/torch.max(inputs.abs())* inputs
+        inputs = 1.0/torch.max(inputs.abs())* inputs
         inputs = jnp.array(inputs.cpu().numpy(), dtype=jnp.float32,)
         inputs = jnp.concat((inputs, jnp.zeros((inputs.shape[0], prediction_delay, inputs.shape[2]), dtype=inputs.dtype)), axis=1)
         out = model(inputs)
@@ -352,9 +352,9 @@ def load_ckpt_and_wav_files(ckpt_path, dataset_dir_or_wav_file):
     return ckpt['hyper_parameters']['cfg']['dataset']['prediction_delay'], wave_list_sorted
 @hydra.main(config_path="config", config_name="generate_waves", version_base=None)
 def main(cfg: DictConfig):
-    prediction_delay, wave_list_sorted = load_ckpt_and_wav_files(cfg.ckpt_path, cfg.test_dir_path)
+    prediction_delay, wave_list_sorted = load_ckpt_and_wav_files(cfg.ckpt_path, cfg.source_wave_path)
     model, weight = adlif_pytorch_states_dict_to_jax_dict(cfg.ckpt_path)
-    adlif_dataloder_loop(cfg.encoder_only, model, weight, prediction_delay, wave_list_sorted, cfg.save_to)
+    adlif_dataloder_loop(cfg.encoder_only, model, weight, prediction_delay, wave_list_sorted, cfg.pred_wave_path)
 
 if __name__ == "__main__":
     main()

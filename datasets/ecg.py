@@ -8,7 +8,6 @@ import torch.utils.data
 # from tonic import DiskCachedDataset
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 import pytorch_lightning as pl
-import urllib3
 from datasets.utils.pad_tensors import PadTensors
 import numpy as np
 
