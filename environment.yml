@@ -9,9 +9,9 @@ channels:
 dependencies:
   - pip
   - python=3.11.8
-  - pytorch==2.5.3
+  - pytorch==2.5.1
   - pytorch-cuda==12.1
-  - torchaudio==2.5.3
+  - torchaudio==2.5.1
   - pytorch-lightning==2.2.1
   - hydra-core==1.3.2
   - matplotlib
@@ -23,3 +23,4 @@ dependencies:
     - jaxlib==0.5.0
     - auraloss==0.4.0
     - librosa==0.10.2
+    - tonic

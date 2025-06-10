@@ -223,6 +223,7 @@ class SEAdLIF(EFAdLIF):
     def __init__(self, cfg, device=None, dtype=None, **kwargs):
         super().__init__(cfg, device, dtype, **kwargs)
         def step_fn(recurrent, alpha, beta, thr, a, b, u_rest, carry, cur):
+
             u_tm1, z_tm1, w_tm1 = carry
             if self.use_recurrent:
                 cur_rec = F.linear(z_tm1, recurrent, None)
