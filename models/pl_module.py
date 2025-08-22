@@ -9,10 +9,12 @@ from models.alif import EFAdLIF, SEAdLIF
 from models.li import LI
 from models.lif import LIF
 from models.rnn import LSTMCellWrapper
+from models.mclif import MCLIF
 
 
 layer_map = {
     "lif": LIF,
+    "mclif": MCLIF,
     "se_adlif": SEAdLIF,
     "ef_adlif": EFAdLIF,
     'lstm': LSTMCellWrapper,
@@ -25,7 +27,7 @@ class MLPSNN(pl.LightningModule):
         cfg: DictConfig,
     ) -> None:
         super().__init__()
-        print(cfg)
+        self.cfg = cfg
         self.ignore_target_idx = -1
         self.two_layers = cfg.two_layers
         self.output_size = cfg.dataset.num_classes
@@ -54,6 +56,8 @@ class MLPSNN(pl.LightningModule):
 
     def forward(
         self, inputs: torch.Tensor) -> tuple[torch.Tensor, list[torch.Tensor]]:
+        # print(f"Input shape: {inputs.shape}")
+
         s1 = self.l1.initial_state(inputs.shape[0], inputs.device)
         s_out = self.out_layer.initial_state(inputs.shape[0], inputs.device)
         if self.two_layers:
@@ -62,11 +66,17 @@ class MLPSNN(pl.LightningModule):
         single_step_prediction_limit = int(math.ceil(inputs.shape[1] * 0.5))
 
         # Iterate over each time step in the data
+        # TODO: Change - here is where I duplicate inputs for now, if the first layer is the MC neuron, otherwise there is still something to do
         for t, x_t in enumerate(inputs.unbind(1)):
-
+            
             # Auto-regression for oscillator task
             if self.auto_regression and t >= single_step_prediction_limit:
                 x_t = out.detach()
+
+            if self.cfg.l1.cell == "mclif":
+                x_t = x_t.unsqueeze(1)  # Add a dimension for the compartment
+                x_t = x_t.repeat(1, 1 + self.cfg.l1.num_compartments, 1)
+                x_t = x_t.reshape(x_t.shape[0], -1)  # Flatten the input for MCLIF
             out, s1 = self.l1(x_t, s1)
             out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
             if self.two_layers:
@@ -74,7 +84,8 @@ class MLPSNN(pl.LightningModule):
                 out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
             out, s_out = self.out_layer(out, s_out)
             out_sequence.append(out)
-            
+        
+        print(f"Output sequence shape: {torch.stack(out_sequence, dim=1).shape}")
         return torch.stack(out_sequence, dim=1)
 
     def on_train_batch_end(self, outputs, batch, batch_idx: int):

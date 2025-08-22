@@ -1,0 +1,64 @@
+# @package _global_
+
+defaults:
+  - /dataset: oscillation
+
+exp_name: oscillation_MCLIF
+auto_regression: True
+
+# Whether to use a two-layer network
+two_layers: False
+# Parameters of SLAYER
+main_alpha: 10
+main_c: 0.5
+main_dt: 1.0
+dropout: 0.0
+
+l1:
+  input_size: ${dataset.n_dof}
+  # number of neurons
+  n_neurons: 200
+  # Which cell to use
+  cell: mclif
+  # Range of tau_u
+  tau_u_range: [1, 25]
+  tau_d_range: [1, 20]
+  tau_t_range: [1, 20]
+  tau_p: [50]
+  train_tau_u_method: 'interpolation'
+  train_tau_d_method: 'interpolation'
+  train_tau_p_method: 'fixed'
+  num_compartments: 1
+  alpha: ${main_alpha}
+  c: ${main_c}
+  dt: ${main_dt}
+
+l_out:
+  input_size: 200
+  # number of neurons
+  n_neurons: ${dataset.n_dof}
+  # Time constant of output layer 
+  tau_u_range: [1, 20]
+  train_tau_method: 'interpolation'
+  dt: ${main_dt}
+
+
+# Number of epochs
+n_epochs: 200
+use_recurrent: True
+
+# Batch size
+batch_size: 256
+
+# Loss aggregation
+loss_agg: MSE
+
+# Metric tracking
+tracking_metric: val_loss
+tracking_mode: min
+
+# optimizer parameters
+# learning rate of the optimizer
+lr: 0.01
+factor: 0.8
+patience: 8

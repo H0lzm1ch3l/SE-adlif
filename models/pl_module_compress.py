@@ -19,7 +19,7 @@ from models.helpers import A_law, inverse_A_law
 from models.li import LI
 from models.lif import LIF
 from models.rnn import LSTMCellWrapper
-
+from models.mclif import MCLIF
 
 # from models.sli import SLI
 torch.autograd.set_detect_anomaly(True)
@@ -27,6 +27,7 @@ torch._dynamo.config.cache_size_limit = 128
 torch.set_float32_matmul_precision("high")
 layer_map = {
     "lif": LIF,
+    "mclif": MCLIF,
     "se_adlif": SEAdLIF,
     "ef_adlif": EFAdLIF,
     "lstm": LSTMCellWrapper,

@@ -4,6 +4,7 @@ from omegaconf import DictConfig
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import logging
 from models.pl_module import MLPSNN
+import os
 
 from pytorch_lightning.strategies import SingleDeviceStrategy
 
@@ -14,6 +15,8 @@ def main(cfg: DictConfig):
     logging.getLogger().addHandler(logging.FileHandler("out.log"))
     logging.info(f"Experiment name: {cfg.exp_name}")
     pl.seed_everything(cfg.random_seed, workers=True)
+
+    os.environ["HYDRA_FULL_ERROR"] = "1"
 
     datamodule = hydra.utils.instantiate(cfg.dataset)
     model = MLPSNN(cfg)
