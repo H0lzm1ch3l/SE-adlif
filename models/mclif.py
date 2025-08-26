@@ -36,7 +36,7 @@ class MCLIF(Module):
         # TODO: I wanna check if the config even has these keys, thats why I don't use cfg.get
         self.train_tau_u = cfg['train_tau_u_method']
         self.train_tau_d = cfg['train_tau_d_method']
-        self.train_tau_p = cfg['train_tau_p_method']
+        self.train_tau_t = cfg['train_tau_t_method']
         self.unroll = cfg.get('unroll', 10)
         self.use_recurrent = cfg.get('use_recurrent', True)
         self.ff_gain = cfg.get('ff_gain', 1.0)
@@ -69,7 +69,7 @@ class MCLIF(Module):
         self.num_compartments = cfg.get('num_compartments', 1)
         self.d_thr = cfg.get('d_thr', 1.0)
         self.tau_d_range = cfg.tau_d_range
-        self.tau_p = cfg.tau_p
+        self.tau_t_range = cfg.tau_t_range
         self.u_p = cfg.get('u_p', 0.5)
 
         self.weight = Parameter(
@@ -100,11 +100,11 @@ class MCLIF(Module):
         )
         self.d0 = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs), requires_grad=False)
 
-        self.tau_p_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_p)(
+        self.tau_t_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_t)(
             self.out_features * self.num_compartments,
             self.dt,
-            self.tau_p,
-            self.tau_p,
+            self.tau_t_range[0],
+            self.tau_t_range[1],
             **factory_kwargs,
         )
         self.t0 = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs), requires_grad=False)
@@ -132,8 +132,7 @@ class MCLIF(Module):
             return (u, z, d, t), z
         self.step = step_fn
         
-        def wrapped_scan(u0: Parameter, d0: Parameter, t0: Parameter,
-                         z0: Tensor, x: Tensor,
+        def wrapped_scan(u0: Parameter, z0: Tensor, d0: Parameter, t0: Parameter, x: Tensor,
                          recurrent: Parameter, alpha: Parameter, beta: Parameter, gamma: Parameter,
                          s_thr: Tensor, d_thr: Tensor):
             if self.use_u_rest:
@@ -145,12 +144,11 @@ class MCLIF(Module):
             def wrapped_step(carry, s_cur, d_cur):
                 return step_fn(recurrent, alpha, beta, gamma, s_thr, d_thr, u_rest, d_rest, carry, s_cur, d_cur)
 
-            return generic_scan(wrapped_step, (u0, z0), x, self.unroll)
+            return generic_scan(wrapped_step, (u0, z0, d0, t0), x, self.unroll)
         
-        def wrapped_scan_with_states(u0: Parameter, d0: Parameter, t0: Parameter,
-                         z0: Tensor, x: Tensor,
-                         recurrent: Parameter, alpha: Parameter, beta: Parameter, gamma: Parameter,
-                         s_thr: Tensor, d_thr: Tensor):
+        def wrapped_scan_with_states(u0: Parameter, z0: Tensor, d0: Parameter, t0: Parameter, x: Tensor,
+                                      recurrent: Parameter, alpha: Parameter, beta: Parameter, gamma: Parameter,
+                                      s_thr: Tensor, d_thr: Tensor):
             if self.use_u_rest:
                 u_rest = u0
             else:
@@ -211,7 +209,7 @@ class MCLIF(Module):
     def forward(self, input_tensor: Tensor, states: tuple[Tensor, Tensor]) -> tuple[Tensor, Tensor]:
         decay_u = self.tau_u_trainer.get_decay()
         decay_d = self.tau_d_trainer.get_decay()
-        decay_t = self.tau_p_trainer.get_decay()
+        decay_t = self.tau_t_trainer.get_decay()
         # lets say the input tensor is a concatenation of soma and dendritic inputs
         # print(f"Input tensor shape: {input_tensor.shape}, Expected shape: ({input_tensor.shape[0]}, {self.in_features + self.in_features * self.num_compartments})")
         currents = F.linear(input_tensor, self.weight, self.bias)
@@ -224,19 +222,27 @@ class MCLIF(Module):
 
     # TODO: Adapt this to work with the new multi-compartmental LIF
     def layer_forward(self, inputs: torch.Tensor) -> Tensor:
-        current = F.linear(inputs, self.weight, self.bias)
         decay_u = self.tau_u_trainer.get_decay()
-        u, z = self.initial_state(inputs.shape[0], inputs.device)
-        out_buffer = self.wrapped_scan(u, z, current, self.recurrent, decay_u, self.s_thr)
+        decay_d = self.tau_d_trainer.get_decay()
+        decay_t = self.tau_t_trainer.get_decay()
+        currents = F.linear(inputs, self.weight, self.bias)
+        soma_current = currents[:, :self.num_out_neuron]
+        dendritic_current = currents[:, self.num_out_neuron:].reshape(-1, self.num_out_neuron, self.num_compartments)
+        u, z, d, t = self.initial_state(inputs.shape[0], inputs.device)
+        out_buffer = self.wrapped_scan(u, z, d, t, soma_current, dendritic_current, self.recurrent, decay_u, decay_d, decay_t, self.s_thr)
         return out_buffer[:, :, :self.num_out_neuron]
 
     # TODO: Adapt this to work with the new multi-compartmental LIF
     @torch.no_grad()
     def layer_forward_with_states(self, inputs: torch.Tensor) -> Tensor:
-        current = F.linear(inputs, self.weight, self.bias)
         decay_u = self.tau_u_trainer.get_decay()
-        u, z = self.initial_state(inputs.shape[0], inputs.device)
-        states, out_buffer = self.wrapped_scan_with_states(u, z, current, self.recurrent, decay_u, self.s_thr)
+        decay_d = self.tau_d_trainer.get_decay()
+        decay_t = self.tau_t_trainer.get_decay()
+        currents = F.linear(inputs, self.weight, self.bias)
+        soma_current = currents[:, :self.num_out_neuron]
+        dendritic_current = currents[:, self.num_out_neuron:].reshape(-1, self.num_out_neuron, self.num_compartments)
+        u, z, d, t = self.initial_state(inputs.shape[0], inputs.device)
+        states, out_buffer = self.wrapped_scan_with_states(u, z, d, t, soma_current, dendritic_current, self.recurrent, decay_u, decay_d, decay_t, self.s_thr)
         return states[..., :self.num_out_neuron], out_buffer[..., :self.num_out_neuron]
     
     # TODO: Adapt this to work with the new multi-compartmental LIF
