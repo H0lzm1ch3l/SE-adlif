@@ -3,24 +3,23 @@ import matplotlib.pyplot as plt
 
 # Constants (scaled to fixed-point representation)
 dt = 0.1  # ms per timestep
-timesteps = 800  # 60 ms simulation
+timesteps = 400  # 40 ms simulation
 vth = 20  # Soma spike threshold
 dth = 5   # Dendrite spike threshold
 dv = 0.95  # Soma decay 
-dd = 0.98  # Dendrite decay
+dd = 0.95  # Dendrite decay
 sd = 1  # Dendritic current scaling (1.0 in 10-bit fixed-point)
-up = 10    # Plateau potential
 pt = 200      # Plateau duration (100 timesteps = 10 ms)
-rt = 100       # Refractory period (20 timesteps = 2 ms)
+rt = 25       # Refractory period (20 timesteps = 2 ms)
 rd = 100       # Dendritic refractory period (20 timesteps = 2 ms)
 rdc = 0       # Dendritic refractory counter
 bias = 0      # Neuron bias
-h_plat = 0.2
+h_plat = 0.5
 # Input spikes (1 timestep each)
 da0 = np.zeros(timesteps)  # Somatic input
 da1 = np.zeros(timesteps)  # Dendritic input
-da1[200:210] = 1  # Dendritic spike at 10 ms (timestep 100)
-da0[400:401] = 16 # Somatic spike at 40 ms (timestep 400) - increased to 160 to ensure spike
+da1[25:35] = 0.1  # Dendritic spike at 10 ms (timestep 100)
+da0[100:110] = 1.5 # Somatic spike at 40 ms (timestep 400) - increased to 160 to ensure spike
 
 # Initialize state variables for multi-compartment neuron
 v_soma = 0        # Soma membrane potential
@@ -43,20 +42,21 @@ u_adlif = 0
 w_adlif = 0
 a_adlif = 50 # in the adlif its range is [0.0, 1.0]
 b_adlif = 1 # in the adlif its range is [0.0, 2.0]
-alpha_adlif = np.exp(-dt / 10)
-beta_adlif = np.exp(-dt / 100)
+alpha_adlif = np.exp(-dt / 5)
+beta_adlif = np.exp(-dt / 10)
+print(f"alpha: {alpha_adlif}, beta: {beta_adlif}")
 
 u_adlif_history = np.zeros(timesteps)
 w_adlif_history = np.zeros(timesteps)
 
-vtot_admclif = 0  # Total soma potential for adLIF
-vtot_admclif_history = np.zeros(timesteps)
+vtot_mcadlif = 0  # Total soma potential for adLIF
+vtot_mcadlif_history = np.zeros(timesteps)
 
 lif_spike_train = np.zeros(timesteps)
 mclif_soma_spike_train = np.zeros(timesteps)
 mclif_dend_spike_train = np.zeros(timesteps)
 adlif_spike_train = np.zeros(timesteps)
-admclif_spike_train = np.zeros(timesteps)
+mcadlif_spike_train = np.zeros(timesteps)
 
 # Main simulation loop
 for t in range(timesteps):
@@ -74,6 +74,19 @@ for t in range(timesteps):
             lif_spike_train[t] = 1
     
     v_lif_history[t] = v_lif
+
+    # =========================================================================
+    # Adaptive LIF Neuron (based on Baronig et. al. 2024)
+    # =========================================================================
+    prev_spike = adlif_spike_train[t - 1] if t > 0 else 0
+    u_adlif = alpha_adlif * u_adlif + (1 - alpha_adlif) * (-w_adlif + (da0[t]*50))
+    w_adlif = beta_adlif * w_adlif + (1 - beta_adlif) * (a_adlif * u_adlif + b_adlif * prev_spike)
+    # print(f"Time {t}, u: {u_adlif}, w: {w_adlif}, input: {da0[t]}, prev_spike: {prev_spike}")
+
+    # check spike
+    if u_adlif >= 1.0:
+        # u_adlif = 0
+        adlif_spike_train[t] = 1
 
     # =========================================================================
     # Multi-compartment Neuron (based on microcode)
@@ -104,7 +117,7 @@ for t in range(timesteps):
     ud_dend = ud_dend * dd + (h_dend * sd)
     
     # Cases: Dendritic plateau logic
-    print(f"Time {t}, Soma Voltage: {v_soma}, Dendrite Current: {ud_dend}, Active: {ac_dend}, Plateau Counter: {pc_dend}, Refractory Counter: {rc_mclif}")
+    # print(f"Time {t}, Soma Voltage: {v_soma}, Dendrite Current: {ud_dend}, Active: {ac_dend}, Plateau Counter: {pc_dend}, Refractory Counter: {rc_mclif}")
     if ud_dend >= dth and ac_dend == 0 and pc_dend == 0 and rdc == 0: # dendrite activated
         # Initiate plateau
         # ud = up
@@ -128,36 +141,32 @@ for t in range(timesteps):
     # Pass2: Apply dendritic current to soma and check for spike
     if rc_mclif == 0:  # Only if not in refractory
 
+        # TODO: Add a separate dendritic compartment for the adLIF neuron
         vtot_mclif = v_soma + ud_dend
+        vtot_mcadlif = u_adlif + ud_dend
+
+        if vtot_mcadlif >= vth:
+            mcadlif_spike_train[t] = 1
 
         if vtot_mclif >= vth:
             # Spike occurred
             v_soma = 0
             # ud = 0  # Reset dendritic current
-            ac_dend = 0  # Deactivate dendrite
-            pc_dend = 0  # Reset plateau counter
+            # ac_dend = 0  # Deactivate dendrite
+            # pc_dend = 0  # Reset plateau counter
             rc_mclif = rt  # Enter refractory period
             mclif_soma_spike_train[t] = 1
 
-    # =========================================================================
-    # Adaptive LIF Neuron (based on Baronig et. al. 2024)
-    # =========================================================================
-    prev_spike = adlif_spike_train[t - 1] if t > 0 else 0
-    u_adlif = alpha_adlif * u_adlif + (1 - alpha_adlif) * (-w_adlif + (da0[t]*100))
-    w_adlif = beta_adlif * w_adlif + (1 - beta_adlif) * (a_adlif * u_adlif + b_adlif * prev_spike)
-
-    # check spike
-    if u_adlif >= 1.0:
-        # u_adlif = 0
-        adlif_spike_train[t] = 1
 
     # =========================================================================
     # Record state
     u_adlif_history[t] = u_adlif
     w_adlif_history[t] = w_adlif
+    vtot_mcadlif_history[t] = vtot_mcadlif
     v_soma_history[t] = vtot_mclif
     ud_dend_history[t] = ud_dend
     vtot_mclif = 0
+    vtot_mcadlif = 0
 
 # Create time axis in milliseconds
 time_ms = np.arange(0, timesteps) * dt
@@ -165,68 +174,80 @@ time_ms = np.arange(0, timesteps) * dt
 # Plot results
 plt.figure(figsize=(12, 10))
 
-# Plot 1: LIF Neuron Voltage
-plt.subplot(5, 1, 1)
-plt.plot(time_ms, v_lif_history, 'g', label='LIF Neuron Voltage (vm)', linewidth=5)
-plt.ylabel('Voltage')
-plt.axhline(y=vth, color='r', linestyle='--', alpha=0.5, label='Threshold')
-# plt.axvline(x=40, color='r', linestyle='--', alpha=0.3)
-# plt.ylim(0, 12 * 1.1)  # Scale to 20% above threshold
-plt.xticks([])  # Remove x-axis ticks and labels
-plt.yticks([])  # Remove x-axis ticks and labels
-# plt.grid(True)
-plt.legend(loc='upper right', fontsize=14)
-
-# Plot 2: Dendritic Potential
-plt.subplot(5, 1, 2)
-plt.plot(time_ms, ud_dend_history, 'b', label='Dendritic Current (ud)', linewidth=5)
-plt.subplots_adjust(hspace=6)
-plt.ylabel('Voltage')
-plt.axhline(y=dth, color='r', linestyle='--', alpha=0.5, label='Dendritic Threshold')
-# plt.axvline(x=20, color='r', linestyle='--', alpha=0.3)
-# plt.axvline(x=40, color='r', linestyle='--', alpha=0.3)
-# plt.ylim(0, up * 1.4)  # Scale to 20% above threshold
-plt.xticks([])  # Remove x-axis ticks and labels
-plt.yticks([])  # Remove x-axis ticks and labels
-# plt.grid(True)
-plt.legend(loc='upper right', fontsize=14)
-
-# Plot 3: Soma Potential (Multi-compartment)
-plt.subplot(5, 1, 3)
-plt.plot(time_ms, v_soma_history, 'r', label='Soma Potential (v)', linewidth=5)
+# Plot 1: Soma Potential (Multi-compartment)
+plt.subplot(6, 1, 1)
+plt.plot(time_ms, v_soma_history, 'g', label='Soma Potential (v)', linewidth=5)
 plt.xlabel('Time (ms)')
 plt.ylabel('Voltage')
 plt.axhline(y=vth, color='r', linestyle='--', alpha=0.5, label='Threshold')
 # plt.axvline(x=40, color='r', linestyle='--', alpha=0.3)
 # plt.ylim(0, vth * 1.1)  # Scale to 20% above threshold
-plt.xticks([])  # Remove x-axis ticks and labels
-plt.yticks([])  # Remove x-axis ticks and labels
+# plt.xticks([])  # Remove x-axis ticks and labels
+# plt.yticks([])  # Remove x-axis ticks and labels
 # plt.grid(True)
 plt.legend(loc='upper right', fontsize=14)
 
-# Plot 4: adLIF Neuron Voltage
-plt.subplot(5, 1, 4)
+# Plot 2: LIF Neuron Voltage - what happens at the proximal dendrite
+plt.subplot(6, 1, 2)
+plt.plot(time_ms, v_lif_history, 'orange', label='LIF Neuron Voltage (vm)', linewidth=5)
+plt.ylabel('Voltage')
+plt.axhline(y=vth, color='r', linestyle='--', alpha=0.5, label='Threshold')
+# plt.axvline(x=40, color='r', linestyle='--', alpha=0.3)
+# plt.ylim(0, 12 * 1.1)  # Scale to 20% above threshold
+# plt.xticks([])  # Remove x-axis ticks and labels
+# plt.yticks([])  # Remove x-axis ticks and labels
+# plt.grid(True)
+plt.legend(loc='upper right', fontsize=14)
+
+# Plot 4: Dendritic Current - what happens at the distal dendrite
+plt.subplot(6, 1, 3)
+plt.plot(time_ms, ud_dend_history, 'c', label='Dendritic Current (ud)', linewidth=5)
+plt.xlabel('Time (ms)')
+plt.ylabel('Voltage')
+plt.axhline(y=vth, color='r', linestyle='--', alpha=0.5, label='Threshold')
+# plt.axvline(x=40, color='r', linestyle='--', alpha=0.3)
+# plt.ylim(-1, 2)  # Scale to 20% above threshold
+# plt.xticks([])  # Remove x-axis ticks and labels
+# plt.yticks([])  # Remove x-axis ticks and labels
+# plt.grid(True)
+plt.legend(loc='upper right', fontsize=14)
+
+# Plot 5: MCadLIF Neuron Voltage
+plt.subplot(6, 1, 4)
+plt.plot(time_ms, vtot_mcadlif_history, 'b', label='adLIF + Dendritic Current (u + ud)', linewidth=5)
+plt.xlabel('Time (ms)')
+plt.ylabel('Voltage')
+plt.axhline(y=vth, color='r', linestyle='--', alpha=0.5, label='Threshold')
+# plt.axvline(x=40, color='r', linestyle='--', alpha=0.3)
+# plt.ylim(-1, 2)  # Scale to 20% above threshold
+# plt.xticks([])  # Remove x-axis ticks and labels
+# plt.yticks([])  # Remove x-axis ticks and labels
+# plt.grid(True)
+plt.legend(loc='upper right', fontsize=14)
+
+# Plot 6: adLIF Neuron Voltage
+plt.subplot(6, 1, 5)
 plt.plot(time_ms, u_adlif_history, 'm', label='adLIF Neuron Voltage (u)', linewidth=5)
 plt.xlabel('Time (ms)')
 plt.ylabel('Voltage')
 plt.axhline(y=vth, color='r', linestyle='--', alpha=0.5, label='Threshold')
 # plt.axvline(x=40, color='r', linestyle='--', alpha=0.3)
 # plt.ylim(-1, 2)  # Scale to 20% above threshold
-plt.xticks([])  # Remove x-axis ticks and labels
-plt.yticks([])  # Remove x-axis ticks and labels
+# plt.xticks([])  # Remove x-axis ticks and labels
+# plt.yticks([])  # Remove x-axis ticks and labels
 # plt.grid(True)
 plt.legend(loc='upper right', fontsize=14)
 
-# Plot 5: adLIF Neuron Adaptation Variable
-plt.subplot(5, 1, 5)
-plt.plot(time_ms, w_adlif_history, 'c', label='adLIF Adaptation Variable (w)', linewidth=5)
+# Plot 7: adLIF Neuron Adaptation Variable
+plt.subplot(6, 1, 6)
+plt.plot(time_ms, w_adlif_history, 'r', alpha=0.5, label='adLIF Adaptation Variable (w)', linewidth=5)
 plt.xlabel('Time (ms)')
 plt.ylabel('Voltage')
-plt.axhline(y=vth, color='r', linestyle='--', alpha=0.5, label='Threshold')
+# plt.axhline(y=vth, color='r', linestyle='--', alpha=0.5, label='Threshold')
 # plt.axvline(x=40, color='r', linestyle='--', alpha=0.3)
 # plt.ylim(-1, 2)  # Scale to 20% above threshold
-plt.xticks([])  # Remove x-axis ticks and labels
-plt.yticks([])  # Remove x-axis ticks and labels
+# plt.xticks([])  # Remove x-axis ticks and labels
+# plt.yticks([])  # Remove x-axis ticks and labels
 # plt.grid(True)
 plt.legend(loc='upper right', fontsize=14)
 
