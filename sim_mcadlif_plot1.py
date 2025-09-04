@@ -79,7 +79,7 @@ for t in range(timesteps):
     # Adaptive LIF Neuron (based on Baronig et. al. 2024)
     # =========================================================================
     prev_spike = adlif_spike_train[t - 1] if t > 0 else 0
-    u_adlif = alpha_adlif * u_adlif + (1 - alpha_adlif) * (-w_adlif + (da0[t]*50))
+    u_adlif = alpha_adlif * u_adlif + (1 - alpha_adlif) * (-w_adlif + (da0[t]*50 if rc_mcadlif==0 else 0))
     w_adlif = beta_adlif * w_adlif + (1 - beta_adlif) * (a_adlif * u_adlif + b_adlif * prev_spike)
     # print(f"Time {t}, u: {u_adlif}, w: {w_adlif}, input: {da0[t]}, prev_spike: {prev_spike}")
 
@@ -138,15 +138,17 @@ for t in range(timesteps):
             ac_dend = 0
             rdc = rd  # Enter dendritic refractory period
     
+
+    vtot_mcadlif = u_adlif + ud_dend
+    if vtot_mcadlif >= vth:
+        mcadlif_spike_train[t] = 1
+        rc_mcadlif = rt
+
     # Pass2: Apply dendritic current to soma and check for spike
     if rc_mclif == 0:  # Only if not in refractory
 
         # TODO: Add a separate dendritic compartment for the adLIF neuron
         vtot_mclif = v_soma + ud_dend
-        vtot_mcadlif = u_adlif + ud_dend
-
-        if vtot_mcadlif >= vth:
-            mcadlif_spike_train[t] = 1
 
         if vtot_mclif >= vth:
             # Spike occurred
@@ -166,7 +168,6 @@ for t in range(timesteps):
     v_soma_history[t] = vtot_mclif
     ud_dend_history[t] = ud_dend
     vtot_mclif = 0
-    vtot_mcadlif = 0
 
 # Create time axis in milliseconds
 time_ms = np.arange(0, timesteps) * dt
