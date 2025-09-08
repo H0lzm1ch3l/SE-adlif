@@ -96,12 +96,11 @@ for t in range(timesteps):
     if rc_mclif > 0:
         rc_mclif -= 1
         # During refractory, only update refractory counter
+        v_soma = v_soma * dv
         pass
     else:
         # Scale input, apply decay, and add bias
-        v_soma = v_soma * dv
-        v_soma = v_soma + da0[t]
-        v_soma = v_soma + bias
+        v_soma = v_soma * dv + da0[t] + bias
     
     # Dendrite0: Update if dendrite is not active
     # Process dendritic input
@@ -144,15 +143,13 @@ for t in range(timesteps):
         mcadlif_spike_train[t] = 1
         rc_mcadlif = rt
 
+    vtot_mclif = v_soma + ud_dend
     # Pass2: Apply dendritic current to soma and check for spike
     if rc_mclif == 0:  # Only if not in refractory
-
         # TODO: Add a separate dendritic compartment for the adLIF neuron
-        vtot_mclif = v_soma + ud_dend
-
         if vtot_mclif >= vth:
             # Spike occurred
-            v_soma = 0
+            # v_soma = 0
             # ud = 0  # Reset dendritic current
             # ac_dend = 0  # Deactivate dendrite
             # pc_dend = 0  # Reset plateau counter
@@ -167,21 +164,22 @@ for t in range(timesteps):
     vtot_mcadlif_history[t] = vtot_mcadlif
     v_soma_history[t] = vtot_mclif
     ud_dend_history[t] = ud_dend
-    vtot_mclif = 0
+    # vtot_mclif = 0
 
 # Create time axis in milliseconds
 time_ms = np.arange(0, timesteps) * dt
 
 # Plot results
-plt.figure(figsize=(12, 10))
+plt.figure(figsize=(12, 20))
 
 plot_data = [
     (v_soma_history, 'g', 'Soma Potential (v)', 'Voltage', vth),
     (v_lif_history, 'orange', 'LIF Neuron Voltage (vm)', 'Voltage', vth),
     (ud_dend_history, 'c', 'Dendritic Current (ud)', 'Voltage', vth),
-    (vtot_mcadlif_history, 'b', 'adLIF + Dendritic Current (u + ud)', 'Voltage', vth),
-    (u_adlif_history, 'm', 'adLIF Neuron Voltage (u)', 'Voltage', vth),
-    (w_adlif_history, 'r', 'adLIF Adaptation Variable (w)', 'Voltage', None),
+    (vtot_mcadlif_history, 'g', 'adLIF + Dendritic Current (u + ud)', 'Voltage', vth),
+    (u_adlif_history, 'orange', 'adLIF Neuron Voltage (u)', 'Voltage', vth),
+    (ud_dend_history, 'c', 'Dendritic Current (ud)', 'Voltage', vth),
+    # (w_adlif_history, 'r', 'adLIF Adaptation Variable (w)', 'Voltage', None),
 ]
 
 for i, (data, color, label, ylabel, threshold) in enumerate(plot_data, 1):
@@ -191,6 +189,7 @@ for i, (data, color, label, ylabel, threshold) in enumerate(plot_data, 1):
     plt.ylabel(ylabel)
     if threshold is not None:
         plt.axhline(y=threshold, color='r', linestyle='--', alpha=0.5, label='Threshold')
+        plt.ylim(-threshold/2, threshold*1.2)
     plt.legend(loc='upper right', fontsize=12)
 
 plt.tight_layout()
