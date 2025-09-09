@@ -121,7 +121,7 @@ class MCLIF(Module):
             
             d = beta * d_tm1 + (1.0 - beta) * (d_cur)
             d_thr = d - d_thr
-            d_plateau = spike_grad_injection_function(d_thr, beta, self.c) 
+            d_plateau = spike_grad_injection_function(d_thr, self.alpha, self.c) 
 
             t = gamma * t_tm1 + d_plateau
             plateau = torch.where(t > self.epsilon, d_rest + self.u_p, torch.zeros_like(d_rest))
