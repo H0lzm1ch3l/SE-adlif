@@ -67,7 +67,6 @@ class MCLIF(Module):
         # - tau for how long the plateau potential lasts
 
         self.num_compartments = cfg.get('num_compartments', 1)
-        
         self.d_thr = cfg.get('d_thr', 1.0)
         self.tau_d_range = cfg.tau_d_range
         self.tau_t_range = cfg.tau_t_range
@@ -113,12 +112,12 @@ class MCLIF(Module):
         self.reset_parameters()
         def step_fn(recurrent, alpha, beta, gamma, s_thr, d_thr, u_rest, d_rest, carry, s_cur, d_cur):
             u_tm1, z_tm1, d_tm1, t_tm1 = carry
-            beta = beta.reshape(-1, self.num_compartments)
-            gamma = gamma.reshape(-1, self.num_compartments)
+            beta = beta.unsqueeze(-1)
+            gamma = gamma.unsqueeze(-1)
             if self.use_recurrent:
                 cur_rec = F.linear(z_tm1, recurrent, None)
                 s_cur = s_cur + cur_rec
-            
+
             d = beta * d_tm1 + (1.0 - beta) * (d_cur)
             d_thr = d - d_thr
             d_plateau = spike_grad_injection_function(d_thr, beta, self.c) 
