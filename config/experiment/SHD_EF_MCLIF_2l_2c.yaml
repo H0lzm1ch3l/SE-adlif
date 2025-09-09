@@ -26,7 +26,7 @@ l1:
   train_tau_u_method: 'interpolation'
   train_tau_d_method: 'interpolation'
   train_tau_t_method: 'interpolation'
-  num_compartments: 1
+  num_compartments: 2
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
@@ -45,7 +45,7 @@ l2:
   train_tau_u_method: 'interpolation'
   train_tau_d_method: 'interpolation'
   train_tau_t_method: 'interpolation'
-  num_compartments: 1
+  num_compartments: 2
   # input size
   alpha: ${alpha}
   c: ${c}
