@@ -14,7 +14,7 @@ rt = 25       # Refractory period (20 timesteps = 2 ms)
 rd = 100       # Dendritic refractory period (20 timesteps = 2 ms)
 rdc = 0       # Dendritic refractory counter
 bias = 0      # Neuron bias
-h_plat = 0.5
+h_plat = 0.55
 # Input spikes (1 timestep each)
 da0 = np.zeros(timesteps)  # Somatic input
 da1 = np.zeros(timesteps)  # Dendritic input
@@ -42,6 +42,7 @@ u_adlif = 0
 w_adlif = 0
 a_adlif = 50 # in the adlif its range is [0.0, 1.0]
 b_adlif = 1 # in the adlif its range is [0.0, 2.0]
+rc_mcadlif = 0  # Refractory counter for mcadlif
 alpha_adlif = np.exp(-dt / 5)
 beta_adlif = np.exp(-dt / 10)
 print(f"alpha: {alpha_adlif}, beta: {beta_adlif}")
