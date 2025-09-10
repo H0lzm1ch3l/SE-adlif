@@ -32,13 +32,10 @@ class MCAdLIF(Module):
         self.out_features = cfg.n_neurons
         self.dt = cfg.get('dt', 1.0)
         self.tau_u_range = cfg.tau_u_range
-        # self.train_tau_u = cfg.get('train_tau_u', 'interpolation')
-        # self.train_tau_d = cfg.get('train_tau_d', 'interpolation')
-        # self.train_tau_p = cfg.get('train_tau_p', 'fixed')
-        # TODO: I wanna check if the config even has these keys, thats why I don't use cfg.get
-        self.train_tau_u = cfg['train_tau_u_method']
-        self.train_tau_d = cfg['train_tau_d_method']
-        self.train_tau_t = cfg['train_tau_t_method']
+        self.train_tau_u = cfg.get('train_tau_u', 'interpolation')
+        self.train_tau_w = cfg.get('train_tau_w', 'interpolation')
+        self.train_tau_d = cfg.get('train_tau_d', 'interpolation')
+        self.train_tau_t = cfg.get('train_tau_t', 'interpolation')
         self.unroll = cfg.get('unroll', 10)
         self.use_recurrent = cfg.get('use_recurrent', True)
         self.ff_gain = cfg.get('ff_gain', 1.0)

@@ -3,7 +3,7 @@
 defaults:
   - /dataset: shd
 
-exp_name: SHD_EF_MCLIF_2layer_3compartment
+exp_name: SHD_EF_MCadLIF_2layer
 # Whether to use a two-layer network
 two_layers: True
 # SLAYER parameters
@@ -15,44 +15,44 @@ dropout: 0.15
 
 l1:
   # Which cell to use
-  cell: mclif
+  cell: mcalif
 # input size of preprocessed SHD
   input_size: 140
   # number of neurons
-  n_neurons: 144
-  tau_u_range: [1, 25]
+  n_neurons: 280
+  tau_u_range: [5, 25]
+  tau_w_range: [60, 300]
   tau_d_range: [1, 20]
   tau_t_range: [20, 50]
-  train_tau_u_method: 'interpolation'
-  train_tau_d_method: 'interpolation'
-  train_tau_t_method: 'interpolation'
-  num_compartments: 3
+
+  num_compartments: 1
+  q: 120
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
 
 l2:
   # Which cell to use
-  cell: mclif
-  input_size: 36
+  cell: mcalif
+  input_size: 140
   # number of neurons
-  n_neurons: 144
+  n_neurons: 280
 
   # Range of tau_u
-  tau_u_range: [1, 25]
+  tau_u_range: [5, 25]
+  tau_w_range: [60, 300]
   tau_d_range: [1, 20]
   tau_t_range: [20, 50]
-  train_tau_u_method: 'interpolation'
-  train_tau_d_method: 'interpolation'
-  train_tau_t_method: 'interpolation'
-  num_compartments: 3
+
+  num_compartments: 1
   # input size
+  q: 120
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
 
 l_out:
-  input_size: 144
+  input_size: 280
   n_neurons: ${dataset.num_classes}
   # Time constant of output layer 
   tau_u_range: [15, 15]

@@ -3,7 +3,7 @@
 defaults:
   - /dataset: shd
 
-exp_name: SHD_EF_MCLIF_2layer_2compartments
+exp_name: SHD_EF_MCLIF_2layer_2compartment
 # Whether to use a two-layer network
 two_layers: True
 # SLAYER parameters
