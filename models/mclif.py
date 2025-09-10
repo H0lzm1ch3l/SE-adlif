@@ -166,6 +166,8 @@ class MCLIF(Module):
 
     def reset_parameters(self):
         self.tau_u_trainer.reset_parameters()
+        self.tau_d_trainer.reset_parameters()
+        self.tau_t_trainer.reset_parameters()
         torch.nn.init.uniform_(
             self.weight,
             -self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
@@ -230,7 +232,7 @@ class MCLIF(Module):
         soma_current = currents[:, :self.num_out_neuron]
         dendritic_current = currents[:, self.num_out_neuron:].reshape(-1, self.num_out_neuron, self.num_compartments)
         u, z, d, t = self.initial_state(inputs.shape[0], inputs.device)
-        out_buffer = self.wrapped_scan(u, z, d, t, soma_current, dendritic_current, self.recurrent, decay_u, decay_d, decay_t, self.s_thr)
+        out_buffer = self.wrapped_scan(u, z, d, t, soma_current, dendritic_current, self.recurrent, decay_u, decay_d, decay_t, self.s_thr, self.d_thr)
         return out_buffer[:, :, :self.num_out_neuron]
 
     # TODO: Adapt this to work with the new multi-compartmental LIF
@@ -243,11 +245,14 @@ class MCLIF(Module):
         soma_current = currents[:, :self.num_out_neuron]
         dendritic_current = currents[:, self.num_out_neuron:].reshape(-1, self.num_out_neuron, self.num_compartments)
         u, z, d, t = self.initial_state(inputs.shape[0], inputs.device)
-        states, out_buffer = self.wrapped_scan_with_states(u, z, d, t, soma_current, dendritic_current, self.recurrent, decay_u, decay_d, decay_t, self.s_thr)
+        states, out_buffer = self.wrapped_scan_with_states(u, z, d, t, soma_current, dendritic_current, self.recurrent, decay_u, decay_d, decay_t, self.s_thr, self.d_thr)
         return states[..., :self.num_out_neuron], out_buffer[..., :self.num_out_neuron]
     
     # TODO: Adapt this to work with the new multi-compartmental LIF
     def apply_parameter_constraints(self):
         self.tau_u_trainer.apply_parameter_constraints()
+        self.tau_d_trainer.apply_parameter_constraints()
+        self.tau_t_trainer.apply_parameter_constraints()
         self.u0.data = self.u0 - torch.sign(self.u0)*torch.relu(torch.abs(self.u0) - self.s_thr)
         self.s_thr.data = torch.maximum(self.s_thr, torch.zeros_like(self.s_thr))
+        self.d_thr = torch.maximum(self.d_thr, torch.zeros_like(self.d_thr))
