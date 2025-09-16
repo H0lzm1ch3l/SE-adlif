@@ -75,7 +75,7 @@ class MLPSNN(pl.LightningModule):
             if self.auto_regression and t >= single_step_prediction_limit:
                 x_t = out.detach()
 
-            if self.cfg.l1.cell == "mclif":
+            if self.cfg.l1.cell == "mclif" or self.cfg.l1.cell == "mcalif":
                 x_t = x_t.unsqueeze(1)  # Add a dimension for the compartment
                 x_t = x_t.repeat(1, 1 + self.cfg.l1.num_compartments, 1)
                 x_t = x_t.reshape(x_t.shape[0], -1)  # Flatten the input for MCLIF

@@ -40,6 +40,7 @@ class MCAdLIF(Module):
         self.use_recurrent = cfg.get('use_recurrent', True)
         self.ff_gain = cfg.get('ff_gain', 1.0)
         s_thr = cfg.get('s_thr', 1.0)
+        d_thr = cfg.get('d_thr', 1.0)
         self.num_out_neuron = cfg.get('num_out_neuron', self.out_features)
         self.use_u_rest = cfg.get('use_u_rest', False)
         self.train_u0 = cfg.get('train_u0', False)
@@ -47,10 +48,16 @@ class MCAdLIF(Module):
             s_thr = torch.FloatTensor(self.out_features, device=device).uniform_(s_thr[0], s_thr[1])
         else:
             s_thr = torch.Tensor([s_thr,])
+        if isinstance(d_thr, Sequence):
+            d_thr = torch.FloatTensor(self.out_features, device=device).uniform_(d_thr[0], d_thr[1])
+        else:
+            d_thr = torch.Tensor([d_thr,])
         if cfg.get('train_thr', False):
             self.s_thr = Parameter(s_thr)
+            self.d_thr = Parameter(d_thr)
         else:
             self.register_buffer('s_thr', s_thr)
+            self.register_buffer('d_thr', d_thr)
             
         self.alpha = cfg.get('alpha', 5.0)
         self.c = cfg.get('c', 0.4)
@@ -75,7 +82,6 @@ class MCAdLIF(Module):
 
         self.num_compartments = cfg.get('num_compartments', 1)
         
-        self.d_thr = cfg.get('d_thr', 1.0)
         self.tau_d_range = cfg.tau_d_range
         self.tau_t_range = cfg.tau_t_range
         self.u_p = cfg.get('u_p', 0.5)
@@ -107,6 +113,8 @@ class MCAdLIF(Module):
             self.tau_w_range[1],
             **factory_kwargs
         )
+        self.d0 = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs), requires_grad=False)
+
         self.tau_d_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_d)(
             self.out_features * self.num_compartments,
             self.dt,
@@ -251,7 +259,7 @@ class MCAdLIF(Module):
         self.tau_t_trainer.apply_parameter_constraints()
         self.u0.data = self.u0 - torch.sign(self.u0)*torch.relu(torch.abs(self.u0) - self.s_thr)
         self.s_thr.data = torch.maximum(self.s_thr, torch.zeros_like(self.s_thr))
-        self.d_thr = torch.maximum(self.d_thr, torch.zeros_like(self.d_thr))
+        self.d_thr.data = torch.maximum(self.d_thr, torch.zeros_like(self.d_thr))
         self.a.data = torch.clamp(self.a, min=self.a_range[0], max=self.a_range[1])
         self.b.data = torch.clamp(self.b, min=self.b_range[0], max=self.b_range[1])
     
@@ -267,7 +275,7 @@ class MCAdLIF(Module):
         soma_current = currents[:, :self.num_out_neuron]
         dendritic_current = currents[:, self.num_out_neuron:].reshape(-1, self.num_out_neuron, self.num_compartments)
         # print(f"Input tensor shape: {input_tensor.shape}, Soma current shape: {soma_current.shape}, Dendritic current shape: {dendritic_current.shape}")
-        new_states, z_t = self.step(self.recurrent, decay_u, decay_w, decay_d, decay_t, self.s_thr, self.d_thr, self.a, self.b, self.u0, self.d0,  states, soma_current, dendritic_current)
+        new_states, z_t = self.step(self.recurrent, decay_u, decay_w, decay_d, decay_t, self.s_thr, self.d_thr, self.a, self.b, self.u0, self.d0, states, soma_current, dendritic_current)
         return z_t, new_states
 
     # TODO: Adapt this to work with the new multi-compartmental LIF
