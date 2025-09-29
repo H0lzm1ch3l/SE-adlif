@@ -1,7 +1,7 @@
 
 from typing import Optional, Sequence
 
-import torch._dynamo.guards
+import torch.dynamo.guards
 from models.helpers import generic_scan, generic_scan_with_states, spike_grad_injection_function
 import torch
 import torch.nn.functional as F
@@ -66,7 +66,7 @@ class MCAdLIF(Module):
         self.tau_w_range = cfg.tau_w_range
         self.train_tau_w_method = cfg.get("train_tau", 'interpolation')
         
-        self.a_range =  cfg.get('a_range', [0.0, 1.0])
+        self.a_range = cfg.get('a_range', [0.0, 1.0])
         self.b_range = cfg.get('b_range',[0.0, 2.0]) 
         
         self.q = cfg.q
