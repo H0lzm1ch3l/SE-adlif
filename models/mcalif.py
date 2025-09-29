@@ -1,7 +1,7 @@
 
 from typing import Optional, Sequence
 
-import torch.dynamo.guards
+import torch._dynamo.guards
 from models.helpers import generic_scan, generic_scan_with_states, spike_grad_injection_function
 import torch
 import torch.nn.functional as F
