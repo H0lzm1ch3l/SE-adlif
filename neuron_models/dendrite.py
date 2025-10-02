@@ -19,7 +19,6 @@ class dendrite:
         self.rc = 0  # Refractory counter
         self.ac = 0  # Active counter
 
-
     def step(self, input):
         if self.rc > 0:
             self.rc -= 1
