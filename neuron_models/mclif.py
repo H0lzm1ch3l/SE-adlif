@@ -12,5 +12,5 @@ class MC:
     
     def step(self, da_soma, da_dend):
         v_dend, dend_spike = self.dendrite.step(da_dend)
-        v_soma, soma_spike = self.lif.step(da_soma + v_dend)
+        v_soma, soma_spike = self.lif.step(da_soma + v_dend.sum(-1))
         return v_soma, v_dend, soma_spike, dend_spike
