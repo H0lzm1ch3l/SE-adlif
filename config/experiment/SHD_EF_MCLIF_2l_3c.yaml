@@ -27,6 +27,7 @@ l1:
   train_tau_d_method: 'interpolation'
   train_tau_t_method: 'interpolation'
   num_compartments: 3
+  u_p: 0.2
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}

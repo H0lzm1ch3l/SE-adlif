@@ -52,6 +52,7 @@ class MCLIF(Module):
             self.s_thr = Parameter(s_thr)
         else:
             self.register_buffer('s_thr', s_thr)
+        # self.s_thr = s_thr
             
         self.alpha = cfg.get('alpha', 5.0)
         self.c = cfg.get('c', 0.4)
@@ -68,7 +69,17 @@ class MCLIF(Module):
 
         self.num_compartments = cfg.get('num_compartments', 1)
         
-        self.d_thr = cfg.get('d_thr', 1.0)
+        d_thr = cfg.get('d_thr', 1.0)
+        if isinstance(d_thr, Sequence):
+            d_thr = torch.FloatTensor(self.out_features, device=device).uniform_(d_thr[0], d_thr[1])
+        else:
+            d_thr = torch.Tensor([d_thr,])
+        if cfg.get('train_thr', False):
+            self.d_thr = Parameter(d_thr)
+        else:
+            self.register_buffer('d_thr', d_thr)
+        # self.d_thr = d_thr
+            
         self.tau_d_range = cfg.tau_d_range
         self.tau_t_range = cfg.tau_t_range
         self.u_p = cfg.get('u_p', 0.5)
