@@ -5,7 +5,7 @@ class sech:
     def __init__(self):
         pass
     def __call__(self, x):
-        pass
+        return - np.sinh(x) / (np.cosh(x)**2)
 
 # TODO: This implementation is not super practical for DL because of the many control flow usages
 class dendrite:

@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from neuron_models.adlif import adLIF
 from neuron_models.lif import LIF
-from neuron_models.dendrite import dendrite
+from neuron_models.dendrite import dendrite, sech
 from neuron_models.mclif import MC
 
 # Constants (scaled to fixed-point representation)
