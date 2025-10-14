@@ -2,22 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 
-def sigmoidal_plateau(V, I, dt, V_rest=-70, g_leak=0.1, g_Ca=0.5, 
-                     E_Ca=120, V_half=-40, k=5):
-    """
-    Direct sigmoidal function modeling calcium channels
-    """
-    # Leak current
-    leak_current = g_leak * (V - V_rest)
-    
-    # Calcium current with sigmoidal activation
-    m_inf = 1.0 / (1.0 + np.exp(-(V - V_half) / k))
-    calcium_current = g_Ca * m_inf * (V - E_Ca)
-    
-    # Total change
-    dV = I - leak_current - calcium_current
-    return V + dt * dV
-
 def double_sigmoid_plateau(V, I, dt, V_plateau=20, 
                           threshold=-55, sharpness=0.5, persistence=0.95):
     """
@@ -126,43 +110,42 @@ def cubic_plateau(V, I, dt, V_th=16, V_peak=20, a=0.01):
     dV = I - a * V * (V - V_th) * (V - V_peak)
     return (V + dt * dV) * 0.99, dV
 
+def sigmoidal_plateau(V, I, dt, V_rest=-70, g_leak=0.1, g_Ca=0.5, 
+                     E_Ca=120, V_half=-40, k=5):
+    """
+    Direct sigmoidal function modeling calcium channels
+    """
+    # Leak current
+    leak_current = g_leak * (V - V_rest)
+    
+    # Calcium current with sigmoidal activation
+    m_inf = 1.0 / (1.0 + torch.exp(-(V - V_half) / k))
+    calcium_current = g_Ca * m_inf * (V - E_Ca)
+    
+    # Total change
+    dV = I - leak_current - calcium_current
+    return V + dt * dV
+
 # Example usage
 dt = 0.1  # ms
 t = torch.arange(0, 100, dt)  # 1000 ms total
 stimulus = torch.zeros_like(t)
 stimulus[200:300] = 3  # Input current pulse from 20 ms to 30 ms
 stimulus.requires_grad = True
-dv_analytical = torch.zeros_like(stimulus)
 
-v_history = torch.zeros_like(stimulus)
-v_history.requires_grad = False
-stimulus = stimulus.unsqueeze(0)
+# do sigmoidal plateau simulation
+V_sig = simulate_plateau(stimulus, sigmoidal_plateau, V0=-70, dt=dt)
 
-
-for i in range(1, len(stimulus[0])):
-    V = torch.zeros(1)
-    V, dv_analytical[i] = cubic_plateau(V, I=stimulus[0, i], dt=dt, a=0.001, V_peak=20, V_th=10)
-    v_history[i] = V
-
-dv_autograd = torch.autograd.grad(V, stimulus)[0]
-print(dv_autograd)
-stimulus = stimulus.squeeze(0)
-
-# Plot results
-plt.figure(figsize=(12, 6))
-plt.subplot(3, 1, 1)
-plt.plot(t.numpy(), stimulus.detach().numpy(), label='Input Current (I)')
-plt.ylabel('Current (I)')
-plt.legend()
-plt.subplot(3, 1, 2)
-plt.plot(t.numpy(), v_history.detach().numpy(), label='Membrane Potential (V)', color='orange')
-plt.ylabel('Membrane Potential (V)')
-plt.legend()
-plt.subplot(3, 1, 3)
-plt.plot(t.numpy(), dv_analytical.detach().numpy(), label='Analytical dV/dI', color='green')
-plt.plot(t.numpy(), dv_autograd.squeeze(0).detach().numpy(), '--', label='Autograd dV/dI', color='red')
-plt.ylabel('dV/dI')
-plt.xlabel('Time (ms)')
-plt.legend()
+dv_dsig = torch.autograd.grad(V_sig, stimulus, torch.ones_like(V_sig), retain_graph=True)[0]
+plt.figure(figsize=(12, 8))
+plt.subplot(3,1,1)
+plt.plot(t, V_sig.detach().numpy())
+plt.title('Sigmoidal Plateau Potential')
+plt.subplot(3,1,2)
+plt.plot(t, stimulus.detach().numpy())
+plt.title('Input Current')
+plt.subplot(3,1,3)
+plt.plot(t, dv_dsig.detach().numpy())
+plt.title('Gradient of V w.r.t Input Current')
 plt.tight_layout()
-plt.show() 
+plt.show()
