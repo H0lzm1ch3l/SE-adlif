@@ -2,18 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 
-def cubic_plateau(V, I, dt, V_peak=20, a=0.01):
-    """
-    Direct cubic function for plateau potential
-    V: current membrane potential
-    I: input current
-    dt: timestep
-    Returns: new membrane potential
-    """
-    # Cubic dynamics: dV/dt = I - a*(V-V_rest)*(V-V_th)*(V-V_peak)
-    dV = I - a * V**2 * (V - V_peak)
-    return V + dt * dV
-
 def sigmoidal_plateau(V, I, dt, V_rest=-70, g_leak=0.1, g_Ca=0.5, 
                      E_Ca=120, V_half=-40, k=5):
     """
@@ -126,13 +114,55 @@ def simulate_plateau(stimulus, plateau_fn, V0=0, dt=0.1, **kwargs):
     
     return V
 
-
+def cubic_plateau(V, I, dt, V_th=16, V_peak=20, a=0.01):
+    """
+    Direct cubic function for plateau potential
+    V: current membrane potential
+    I: input current
+    dt: timestep
+    Returns: new membrane potential
+    """
+    # Cubic dynamics: dV/dt = I - a*(V-V_rest)*(V-V_th)*(V-V_peak)
+    dV = I - a * V * (V - V_th) * (V - V_peak)
+    return (V + dt * dV) * 0.99, dV
 
 # Example usage
 dt = 0.1  # ms
 t = torch.arange(0, 100, dt)  # 1000 ms total
 stimulus = torch.zeros_like(t)
-stimulus[200:300] = 5  # Input current pulse from 20 ms to 30 ms
+stimulus[200:300] = 3  # Input current pulse from 20 ms to 30 ms
 stimulus.requires_grad = True
+dv_analytical = torch.zeros_like(stimulus)
 
-V = simulate_plateau(stimulus, sigmoidal_plateau, dt=dt)
+v_history = torch.zeros_like(stimulus)
+v_history.requires_grad = False
+stimulus = stimulus.unsqueeze(0)
+
+
+for i in range(1, len(stimulus[0])):
+    V = torch.zeros(1)
+    V, dv_analytical[i] = cubic_plateau(V, I=stimulus[0, i], dt=dt, a=0.001, V_peak=20, V_th=10)
+    v_history[i] = V
+
+dv_autograd = torch.autograd.grad(V, stimulus)[0]
+print(dv_autograd)
+stimulus = stimulus.squeeze(0)
+
+# Plot results
+plt.figure(figsize=(12, 6))
+plt.subplot(3, 1, 1)
+plt.plot(t.numpy(), stimulus.detach().numpy(), label='Input Current (I)')
+plt.ylabel('Current (I)')
+plt.legend()
+plt.subplot(3, 1, 2)
+plt.plot(t.numpy(), v_history.detach().numpy(), label='Membrane Potential (V)', color='orange')
+plt.ylabel('Membrane Potential (V)')
+plt.legend()
+plt.subplot(3, 1, 3)
+plt.plot(t.numpy(), dv_analytical.detach().numpy(), label='Analytical dV/dI', color='green')
+plt.plot(t.numpy(), dv_autograd.squeeze(0).detach().numpy(), '--', label='Autograd dV/dI', color='red')
+plt.ylabel('dV/dI')
+plt.xlabel('Time (ms)')
+plt.legend()
+plt.tight_layout()
+plt.show() 
