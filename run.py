@@ -8,6 +8,8 @@ import os
 
 from pytorch_lightning.strategies import SingleDeviceStrategy
 
+from module.tau_monitor import TauMonitor
+
 # Main entry point. We use Hydra (https://hydra.cc) for configuration management. Note, that Hydra changes the working directory, such that each run gets a unique directory.
 
 @hydra.main(config_path="config", config_name="main", version_base=None)
@@ -31,7 +33,9 @@ def main(cfg: DictConfig):
     lr_monitor = LearningRateMonitor(
         logging_interval='step'
     )
-    callbacks = [model_ckpt_tracker, lr_monitor]
+
+    tau_monitor = TauMonitor()
+    callbacks = [model_ckpt_tracker, lr_monitor, tau_monitor]
 
     trainer: pl.Trainer = pl.Trainer(
         callbacks=callbacks,

@@ -33,9 +33,9 @@ l2:
   n_neurons: 280
 
   # Range of tau_u
-  tau_u_range: [1, 25]
+  tau_u_range: [5, 25]
   tau_d_range: [1, 20]
-  tau_t_range: [20, 50]
+  tau_t_range: [10, 60]
   train_tau_u_method: 'interpolation'
   train_tau_d_method: 'interpolation'
   train_tau_t_method: 'interpolation'
