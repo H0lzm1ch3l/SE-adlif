@@ -29,12 +29,10 @@ class TauTrainer(Module):
         ) -> None:
         factory_kwargs = {'device': device, 'dtype': dtype}
         super(TauTrainer, self).__init__(**kwargs)
-        self.dt = dt        
+        self.dt = dt
         self.weight = Parameter(torch.empty(in_features, **factory_kwargs))
         self.register_buffer("tau_max", torch.tensor(tau_max, **factory_kwargs))
         self.register_buffer("tau_min", torch.tensor(tau_min, **factory_kwargs))
-        
-        
         
     def reset_parameters(self) -> None:
         raise NotImplementedError("This function should not be call from the base class.")

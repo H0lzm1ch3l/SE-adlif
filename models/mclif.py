@@ -56,7 +56,7 @@ class MCLIF(Module):
             
         self.alpha = cfg.get('alpha', 5.0)
         self.c = cfg.get('c', 0.4)
-        self.epsilon = cfg.get('epsilon', 1e-6)
+        self.epsilon = cfg.get('epsilon', 0.5)
 
         # this is where I add the multi-compartment parameters
         # now what do i need
@@ -132,10 +132,11 @@ class MCLIF(Module):
             
             d = beta * d_tm1 + (1.0 - beta) * (d_cur)
             d_thr = d - d_thr
-            d_plateau = spike_grad_injection_function(d_thr, self.alpha, self.c) 
 
-            t = gamma * t_tm1 + d_plateau
-            plateau = torch.where(t > self.epsilon, d_rest + self.u_p, torch.zeros_like(d_rest))
+            t = gamma * t_tm1 + (1.0 - gamma) * spike_grad_injection_function(d_thr, self.alpha, self.c) 
+            # plateau = torch.where(t > self.epsilon, d_rest + self.u_p, torch.zeros_like(d_rest))
+            # TODO: Not neglect d_rest anymore
+            plateau = torch.sigmoid(t - self.epsilon) * self.u_p 
             u = alpha * u_tm1 + (1.0 - alpha) * (s_cur)
             u_thr = (u + plateau.sum(-1)) - s_thr
             

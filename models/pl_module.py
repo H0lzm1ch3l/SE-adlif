@@ -87,7 +87,7 @@ class MLPSNN(pl.LightningModule):
             out, s_out = self.out_layer(out, s_out)
             out_sequence.append(out)
         
-        print(f"Output sequence shape: {torch.stack(out_sequence, dim=1).shape}")
+        # print(f"Output sequence shape: {torch.stack(out_sequence, dim=1).shape}")
         return torch.stack(out_sequence, dim=1)
 
     def on_train_batch_end(self, outputs, batch, batch_idx: int):
