@@ -135,13 +135,11 @@ class MCLIF(Module):
 
             t = gamma * t_tm1 + (1.0 - gamma) * spike_grad_injection_function(d_thr, self.alpha, self.c) 
             # plateau = torch.where(t > self.epsilon, d_rest + self.u_p, torch.zeros_like(d_rest))
-            # TODO: Not neglect d_rest anymore
-            plateau = torch.sigmoid(t - self.epsilon) * self.u_p 
-            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur)
-            u_thr = (u + plateau.sum(-1)) - s_thr
-            
+            plateau = torch.sigmoid(t - self.epsilon) * self.u_p + d_rest
+            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur) + plateau.sum(-1)
+            u_thr = u - s_thr
             z = spike_grad_injection_function(u_thr, self.alpha, self.c)
-            u = u * (1 - z.detach()) + (u_rest + plateau.sum(-1))*z.detach()
+            u = u * (1 - z.detach()) + u_rest * z.detach()
             return (u, z, d, t), z
         self.step = step_fn
         
