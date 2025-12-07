@@ -28,7 +28,7 @@ l1:
 l2:
   # Which cell to use
   cell: mclif
-  input_size: 65
+  input_size: 120
   # number of neurons
   n_neurons: 195
 
