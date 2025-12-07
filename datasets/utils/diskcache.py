@@ -36,7 +36,7 @@ class DiskCachedDataset(torch.utils.data.Dataset):
         try:
             f = open(self.cache_path / key, 'rb')
             buffer = io.BytesIO(f.read())
-            data = torch.load(buffer)
+            data = torch.load(buffer, weights_only=False)
         except Exception as exc:
             if not isinstance(exc, FileNotFoundError):
                 print("File was found but exception occured while trying to load from cache: {}".format(exc))
