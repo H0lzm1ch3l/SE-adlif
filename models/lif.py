@@ -82,7 +82,7 @@ class LIF(Module):
             )
             u_thr = u - thr
             z = spike_grad_injection_function(u_thr, self.alpha, self.c)
-            u = u * (1 - z.detach()) + u_rest * z.detach()
+            u = u * (1 - z.detach()) + u_rest*z.detach()
             return (u, z), z
         self.step = step_fn
         
