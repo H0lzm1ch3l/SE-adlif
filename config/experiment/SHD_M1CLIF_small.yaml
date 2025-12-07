@@ -3,7 +3,7 @@
 defaults:
   - /dataset: shd
 
-exp_name: SHD_EF_MCLIF_small
+exp_name: SHD_M1CLIF_small
 # Whether to use a two-layer network
 two_layers: false
 # SLAYER parameters
