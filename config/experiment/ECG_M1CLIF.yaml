@@ -18,7 +18,7 @@ l1:
 # input size of preprocessed SHD
   input_size: 4
   # number of neurons
-  n_neurons: 28
+  n_neurons: 40
   tau_u_range: [5, 25]
   alpha: ${alpha}
   c: ${c}
@@ -27,7 +27,7 @@ l1:
 l2:
   # Which cell to use
   cell: mclif
-  input_size: 7
+  input_size: 20
   # number of neurons
   n_neurons: 24
 

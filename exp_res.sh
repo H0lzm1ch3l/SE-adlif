@@ -6,9 +6,9 @@ gpu_count=8  # Number of available GPUs
 
 for exp in "${experiments[@]}"; do
     for ((i=1; i<=runs; i++)); do
-        gpu_id=$(( (i - 1) % gpu_count ))  # Alternate GPU IDs
+        gpu_id=$(( (i - 1) % gpu_count ))
         echo "Running $exp - Iteration $i on GPU $gpu_id"
-        CUDA_VISIBLE_DEVICES=$gpu_id bash -c "echo 'Executing command for $exp - Iteration $i'; sleep 2" &  # Replace with your actual command
+        uv run run.py experiment=$exp device=cuda:$gpu_id &
     done
 done
 

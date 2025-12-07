@@ -9,9 +9,9 @@ exp_name: SSC_M2CLIF
 # Whether to use a two-layer network
 two_layers: true
 # SLAYER parameters
-main_alpha: 5.0
-main_c: 0.4
-main_dt: 1.0
+alpha: 5.0
+c: 0.4
+dt: 1.0
 # Dropout rate
 dropout: 0.15
 l1:
@@ -20,7 +20,7 @@ l1:
 # input size of preprocessed SSC
   input_size: 140
   # number of neurons
-  n_neurons: 720
+  n_neurons: 420
   # Range of tau_u
   tau_u_range: [5, 25]
   # Factor for reparametrization of a and b (see paper)
@@ -31,7 +31,7 @@ l1:
 l2:
   # Which cell to use
   cell: mclif
-  input_size: 720
+  input_size: 140
   # number of neurons
   n_neurons: 720
 
