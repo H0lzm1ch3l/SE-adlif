@@ -34,8 +34,8 @@ def main(cfg: DictConfig):
         logging_interval='step'
     )
 
-    tau_monitor = TauMonitor()
-    callbacks = [model_ckpt_tracker, lr_monitor, tau_monitor]
+    # tau_monitor = TauMonitor()
+    callbacks = [model_ckpt_tracker, lr_monitor] # , tau_monitor]
 
     trainer: pl.Trainer = pl.Trainer(
         callbacks=callbacks,

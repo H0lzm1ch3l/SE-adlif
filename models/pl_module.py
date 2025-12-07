@@ -29,7 +29,9 @@ class MLPSNN(pl.LightningModule):
         cfg: DictConfig,
     ) -> None:
         super().__init__()
-        self.cfg = cfg
+        self.repeat_inputs = None
+        if cfg.l1.cell == "mclif" or cfg.l1.cell == "mcalif":
+            self.repeat_inputs = cfg.l1.num_compartments + 1
         self.ignore_target_idx = -1
         self.two_layers = cfg.two_layers
         self.output_size = cfg.dataset.num_classes
@@ -75,9 +77,9 @@ class MLPSNN(pl.LightningModule):
             if self.auto_regression and t >= single_step_prediction_limit:
                 x_t = out.detach()
 
-            if self.cfg.l1.cell == "mclif" or self.cfg.l1.cell == "mcalif":
+            if self.repeat_inputs is not None:
                 x_t = x_t.unsqueeze(1)  # Add a dimension for the compartment
-                x_t = x_t.repeat(1, 1 + self.cfg.l1.num_compartments, 1)
+                x_t = x_t.repeat(1, self.repeat_inputs, 1)
                 x_t = x_t.reshape(x_t.shape[0], -1)  # Flatten the input for MCLIF
             out, s1 = self.l1(x_t, s1)
             out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)

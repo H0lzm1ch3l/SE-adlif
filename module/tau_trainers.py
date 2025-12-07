@@ -1,5 +1,4 @@
 from torch.nn import Module
-
 import torch
 from torch.nn.parameter import Parameter
 
@@ -49,6 +48,7 @@ class TauTrainer(Module):
     def get_decay(self):
         return self.forward()
 
+
 class FixedTau(TauTrainer):
     def __init__(
         self,
@@ -76,7 +76,6 @@ class FixedTau(TauTrainer):
         torch.nn.init.uniform_(self.weight, a=self.tau_min, b=self.tau_max)
         self.weight.requires_grad = False
         
-
 
 class InterpolationTrainer(TauTrainer):
     def __init__(
