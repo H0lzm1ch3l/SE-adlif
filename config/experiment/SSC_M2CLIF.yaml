@@ -3,7 +3,7 @@
 defaults:
   - /dataset: ssc
 
-exp_name: SSC_MCLIF
+exp_name: SSC_M2CLIF
 
 
 # Whether to use a two-layer network
@@ -16,15 +16,13 @@ main_dt: 1.0
 dropout: 0.15
 l1:
   # Which cell to use
-  cell: ef_adlif
-# input size of preprocessed SHD
+  cell: lif
+# input size of preprocessed SSC
   input_size: 140
   # number of neurons
   n_neurons: 720
   # Range of tau_u
   tau_u_range: [5, 25]
-  # Range of tau_w
-  tau_w_range: [60, 300]
   # Factor for reparametrization of a and b (see paper)
   q: 60
   alpha: ${alpha}
@@ -32,18 +30,21 @@ l1:
   dt: ${dt}
 l2:
   # Which cell to use
-  cell: ef_adlif
+  cell: mclif
   input_size: 720
   # number of neurons
   n_neurons: 720
 
   # Range of tau_u
   tau_u_range: [5, 25]
-
-  # Range of tau_w
-  tau_w_range: [60, 300]
-  # Factor for reparametrization of a and b (see paper)
-  q: 60
+  tau_d_range: [1, 20]
+  tau_t_range: [1, 60]
+  train_tau_u_method: 'interpolation'
+  train_tau_d_method: 'interpolation'
+  train_tau_t_method: 'interpolation'
+  num_compartments: 2
+  epsilon: 0.2
+  u_p: 0.3
   # input size
   alpha: ${alpha}
   c: ${c}

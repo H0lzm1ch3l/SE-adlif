@@ -1,25 +1,24 @@
 # @package _global_
 
 defaults:
-  - /dataset: shd
+  - /dataset: ecg
 
-exp_name: SHD_M2CLIF
+exp_name: ECG_M3CLIF
 # Whether to use a two-layer network
-two_layers: True
-# SLAYER parameters
-alpha: 5.0
-c: 0.1
+two_layers: true
+
+# Parameters of SLAYER
+alpha: 5
+c: 0.2
 dt: 1.0
-# Dropout rate
-dropout: 0.15
 
 l1:
   # Which cell to use
   cell: lif
 # input size of preprocessed SHD
-  input_size: 140
+  input_size: 4
   # number of neurons
-  n_neurons: 360
+  n_neurons: 28
   tau_u_range: [5, 25]
   alpha: ${alpha}
   c: ${c}
@@ -28,40 +27,42 @@ l1:
 l2:
   # Which cell to use
   cell: mclif
-  input_size: 65
+  input_size: 7
   # number of neurons
-  n_neurons: 195
+  n_neurons: 24
 
-  # Range of tau_u
-  tau_u_range: [1, 25]
+  tau_u_range: [5, 25]
   tau_d_range: [1, 20]
-  tau_t_range: [20, 50]
+  tau_t_range: [1, 60]
   train_tau_u_method: 'interpolation'
   train_tau_d_method: 'interpolation'
   train_tau_t_method: 'interpolation'
-  num_compartments: 2
-  u_p: 0.3
+  num_compartments: 3
   epsilon: 0.2
+  u_p: 0.2
   # input size
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
 
 l_out:
-  input_size: 195
+  input_size: 24
   n_neurons: ${dataset.num_classes}
   # Time constant of output layer 
-  tau_u_range: [15, 15]
+  tau_u_range: [3, 3]
   dt: ${dt}
 
 # Number of epochs
-n_epochs: 300
+n_epochs: 400
+
+# Dropout rate
+dropout: 0.15
 
 # Batch size
-batch_size: 256
+batch_size: 64
 
 # Loss aggregation
-loss_agg: softmax
+loss_agg: summed_membrane_potentials
 
 # Metric tracking
 tracking_metric: val_acc
@@ -71,4 +72,5 @@ tracking_mode: max
 # learning rate of the optimizer
 lr: 0.01
 factor: 0.9
-patience: 9999
+patience: 9999 # no lr decay
+
