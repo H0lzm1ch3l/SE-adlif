@@ -145,11 +145,11 @@ class MCAdLIF(Module):
             d_plateau = spike_grad_injection_function(d_thr, self.alpha, self.c) 
 
             t = gamma * t_tm1 + d_plateau
-            plateau = torch.where(t > self.epsilon, d_rest + self.u_p, torch.zeros_like(d_rest))
-            
-            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur - w_tm1)
-            u_thr = (u + plateau.sum(-1)) - s_thr
-            
+            # plateau = torch.where(t > self.epsilon, d_rest + self.u_p, torch.zeros_like(d_rest))
+            plateau = torch.sigmoid(t - self.epsilon) * self.u_p + d_rest
+
+            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur - w_tm1) + plateau.sum(-1)
+            u_thr = u - s_thr
             z = spike_grad_injection_function(u_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + (u_rest + plateau.sum(-1))*z.detach()
             
