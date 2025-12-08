@@ -8,7 +8,7 @@ for exp in "${experiments[@]}"; do
     for ((i=1; i<=runs; i++)); do
         gpu_id=$(( (i - 1) % gpu_count ))
         echo "Running $exp - Iteration $i on GPU $gpu_id"
-        uv run run.py experiment=$exp device=cuda:$gpu_id &
+        uv run run.py experiment=$exp device=cuda:$gpu_id
     done
 done
 
