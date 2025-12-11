@@ -1,65 +1,70 @@
 # @package _global_
 
 defaults:
-  - /dataset: ssc
+  - /dataset: ecg
 
-exp_name: SSC_M3CLIF
-
-
+exp_name: ECG_MC2adLIF
 # Whether to use a two-layer network
 two_layers: true
-# SLAYER parameters
-alpha: 5.0
-c: 0.4
+
+# Parameters of SLAYER
+alpha: 5
+c: 0.2
 dt: 1.0
-# Dropout rate
-dropout: 0.15
+
 l1:
   # Which cell to use
   cell: lif
-# input size of preprocessed SSC
-  input_size: 140
+# input size of preprocessed SHD
+  input_size: 4
   # number of neurons
-  n_neurons: 320
-  # Range of tau_u
+  n_neurons: 33
   tau_u_range: [5, 25]
-  # Factor for reparametrization of a and b (see paper)
-  q: 60
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
+
 l2:
   # Which cell to use
-  cell: mclif
-  input_size: 80
+  cell: mcalif
+  input_size: 11
   # number of neurons
-  n_neurons: 720
+  n_neurons: 24
 
   # Range of tau_u
   tau_u_range: [5, 25]
   tau_d_range: [1, 20]
   tau_t_range: [1, 60]
-  train_tau_u_method: 'interpolation'
-  train_tau_d_method: 'interpolation'
-  train_tau_t_method: 'interpolation'
-  num_compartments: 3
+
+  # Range of tau_w
+  tau_w_range: [60, 300]
+  # Factor for reparametrization of a and b (see paper)
+  q: 120
+  
+  num_compartments: 2
   epsilon: 0.2
-  u_p: 0.2
+  u_p: 0.3
   # input size
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
+
 l_out:
-  input_size: 720
+  input_size: 24
   n_neurons: ${dataset.num_classes}
   # Time constant of output layer 
-  tau_u_range: [15, 15]
+  tau_u_range: [3, 3]
   dt: ${dt}
 
-# Batch size
-batch_size: 256
 # Number of epochs
-n_epochs: 40
+n_epochs: 400
+
+# Dropout rate
+dropout: 0.15
+
+# Batch size
+batch_size: 64
+
 # Loss aggregation
 loss_agg: summed_membrane_potentials
 
@@ -69,7 +74,7 @@ tracking_mode: max
 
 # optimizer parameters
 # learning rate of the optimizer
-lr: 6e-3
+lr: 0.01
 factor: 0.9
-patience: 9999
+patience: 9999 # no lr decay
 
