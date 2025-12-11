@@ -11,11 +11,13 @@ from models.lif import LIF
 from models.rnn import LSTMCellWrapper
 from models.mclif import MCLIF
 from models.mcalif import MCAdLIF
+from models.mclif_v2 import MCLIF2
 
 
 layer_map = {
     "lif": LIF,
     "mclif": MCLIF,
+    "mclif_v2": MCLIF2,
     "mcalif": MCAdLIF,
     "se_adlif": SEAdLIF,
     "ef_adlif": EFAdLIF,
