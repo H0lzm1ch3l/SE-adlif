@@ -20,7 +20,7 @@ l1:
 # input size of preprocessed SSC
   input_size: 140
   # number of neurons
-  n_neurons: 270
+  n_neurons: 320
   # Range of tau_u
   tau_u_range: [5, 25]
   # Factor for reparametrization of a and b (see paper)
@@ -31,7 +31,7 @@ l1:
 l2:
   # Which cell to use
   cell: mclif
-  input_size: 90
+  input_size: 80
   # number of neurons
   n_neurons: 720
 

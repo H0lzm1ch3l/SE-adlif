@@ -29,7 +29,7 @@ l1:
   dt: ${dt}
 l2:
   # Which cell to use
-  cell: mcadlif
+  cell: mcalif
   input_size: 280
   # number of neurons
   n_neurons: 720
