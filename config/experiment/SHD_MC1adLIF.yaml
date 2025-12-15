@@ -15,12 +15,16 @@ dropout: 0.15
 
 l1:
   # Which cell to use
-  cell: lif
+  cell: se_adlif
 # input size of preprocessed SHD
   input_size: 140
   # number of neurons
   n_neurons: 360
   tau_u_range: [5, 25]
+
+  tau_w_range: [60, 300]
+  q: 120
+
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
@@ -36,15 +40,13 @@ l2:
   tau_u_range: [5, 25]
   tau_d_range: [1, 20]
   tau_t_range: [1, 60]
+
   tau_w_range: [60, 300]
-  train_tau_u_method: 'interpolation'
-  train_tau_d_method: 'interpolation'
-  train_tau_t_method: 'interpolation'
+  q: 120
+
   num_compartments: 1
   epsilon: 0.2
   u_p: 0.5
-  # input size
-  q: 120
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}

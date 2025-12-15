@@ -15,15 +15,17 @@ dt: 1.0
 dropout: 0.15
 l1:
   # Which cell to use
-  cell: lif
+  cell: se_adlif
 # input size of preprocessed SSC
   input_size: 140
   # number of neurons
   n_neurons: 560
   # Range of tau_u
   tau_u_range: [5, 25]
+  # Range of tau_w
+  tau_w_range: [60, 300]
   # Factor for reparametrization of a and b (see paper)
-  q: 60
+  q: 120
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
