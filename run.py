@@ -33,9 +33,11 @@ def main(cfg: DictConfig):
     lr_monitor = LearningRateMonitor(
         logging_interval='step'
     )
+    
+    nan_callback = pl.callbacks.early_stopping.EarlyStopping(monitor='train_loss_epoch', check_finite=True, patience=1)
 
     # tau_monitor = TauMonitor()
-    callbacks = [model_ckpt_tracker, lr_monitor] # , tau_monitor]
+    callbacks = [model_ckpt_tracker, lr_monitor, nan_callback] # , tau_monitor]
 
     trainer: pl.Trainer = pl.Trainer(
         callbacks=callbacks,
