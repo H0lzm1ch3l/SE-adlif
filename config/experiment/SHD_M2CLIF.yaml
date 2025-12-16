@@ -35,13 +35,13 @@ l2:
   # Range of tau_u
   tau_u_range: [1, 25]
   tau_d_range: [1, 20]
-  tau_t_range: [20, 50]
+  tau_t_range: [1, 60]
   train_tau_u_method: 'interpolation'
   train_tau_d_method: 'interpolation'
   train_tau_t_method: 'interpolation'
   num_compartments: 2
-  u_p: 0.3
   epsilon: 0.2
+  u_p: 0.3
   # input size
   alpha: ${alpha}
   c: ${c}

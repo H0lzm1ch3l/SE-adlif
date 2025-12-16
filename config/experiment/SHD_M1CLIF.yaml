@@ -40,7 +40,7 @@ l2:
   train_tau_u_method: 'interpolation'
   train_tau_d_method: 'interpolation'
   train_tau_t_method: 'interpolation'
-  num_compartments: 2
+  num_compartments: 1
   epsilon: 0.2
   u_p: 0.5
   # input size
