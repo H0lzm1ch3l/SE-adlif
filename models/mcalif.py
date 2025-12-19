@@ -32,10 +32,10 @@ class MCAdLIF(Module):
         self.out_features = cfg.n_neurons
         self.dt = cfg.get('dt', 1.0)
         self.tau_u_range = cfg.tau_u_range
-        self.train_tau_u = cfg.get('train_tau_u', 'interpolation')
-        self.train_tau_w = cfg.get('train_tau_w', 'interpolation')
-        self.train_tau_d = cfg.get('train_tau_d', 'interpolation')
-        self.train_tau_t = cfg.get('train_tau_t', 'interpolation')
+        self.train_tau_u_method = cfg.get('train_tau_u_method', 'interpolation')
+        self.train_tau_w_method = cfg.get('train_tau_w_method', 'interpolation')
+        self.train_tau_d_method = cfg.get('train_tau_d_method', 'interpolation')
+        self.train_tau_t_method = cfg.get('train_tau_t_method', 'interpolation')
         self.unroll = cfg.get('unroll', 10)
         self.use_recurrent = cfg.get('use_recurrent', True)
         self.ff_gain = cfg.get('ff_gain', 1.0)
@@ -64,7 +64,6 @@ class MCAdLIF(Module):
         self.epsilon = cfg.get('epsilon', 1e-6)
         
         self.tau_w_range = cfg.tau_w_range
-        self.train_tau_w_method = cfg.get("train_tau", 'interpolation')
         
         self.a_range = cfg.get('a_range', [0.0, 1.0])
         self.b_range = cfg.get('b_range',[0.0, 2.0]) 
@@ -97,7 +96,7 @@ class MCAdLIF(Module):
         else:
             # registering an empty size tensor is required for the static analyser
             self.register_buffer("recurrent", torch.empty(size=()))
-        self.tau_u_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_u)(
+        self.tau_u_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_u_method)(
             self.out_features,
             self.dt,
             self.tau_u_range[0],
@@ -115,14 +114,14 @@ class MCAdLIF(Module):
         )
         self.d0 = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs), requires_grad=False)
 
-        self.tau_d_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_d)(
+        self.tau_d_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_d_method)(
             self.out_features * self.num_compartments,
             self.dt,
             self.tau_d_range[0], 
             self.tau_d_range[1],
             **factory_kwargs,
         )
-        self.tau_t_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_t)(
+        self.tau_t_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_t_method)(
             self.out_features * self.num_compartments,
             self.dt,
             self.tau_t_range[0],
@@ -141,17 +140,15 @@ class MCAdLIF(Module):
                 s_cur = s_cur + cur_rec
             
             d = delta * d_tm1 + (1.0 - delta) * (d_cur)
-            d_thr = d - d_thr
-            d_plateau = spike_grad_injection_function(d_thr, self.alpha, self.c) 
-
-            t = gamma * t_tm1 + d_plateau
-            # plateau = torch.where(t > self.epsilon, d_rest + self.u_p, torch.zeros_like(d_rest))
+            d_plateau = spike_grad_injection_function(d - d_thr, self.alpha, self.c) 
+            d = d * (1 - d_plateau.detach()) + (d_rest * d_plateau.detach())
+            t = gamma * t_tm1 + (1.0 - gamma) * d_plateau
+            # d = d * (1 - t.detach()) + (d_rest * t.detach()) 
             plateau = torch.sigmoid(t - self.epsilon) * self.u_p + d_rest
 
-            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur - w_tm1) + plateau.sum(-1)
-            u_thr = u - s_thr
-            z = spike_grad_injection_function(u_thr, self.alpha, self.c)
-            u = u * (1 - z.detach()) + (u_rest + plateau.sum(-1))*z.detach()
+            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur - w_tm1)
+            z = spike_grad_injection_function(u + plateau.sum(-1) - s_thr, self.alpha, self.c)
+            u = u * (1 - z.detach()) + (u_rest * z.detach())
             
             w = (beta * w_tm1 + (1.0 - beta) * (a * u + b * z) * self.q)
             return (u, z, w, d, t), z

@@ -34,9 +34,9 @@ class MCLIF(Module):
         # self.train_tau_d = cfg.get('train_tau_d', 'interpolation')
         # self.train_tau_p = cfg.get('train_tau_p', 'fixed')
         # TODO: I wanna check if the config even has these keys, thats why I don't use cfg.get
-        self.train_tau_u = cfg.get('train_tau_u_method', 'interpolation')
-        self.train_tau_d = cfg.get('train_tau_d_method', 'interpolation')
-        self.train_tau_t = cfg.get('train_tau_t_method', 'interpolation')
+        self.train_tau_u_method = cfg.get('train_tau_u_method', 'interpolation')
+        self.train_tau_d_method = cfg.get('train_tau_d_method', 'interpolation')
+        self.train_tau_t_method = cfg.get('train_tau_t_method', 'interpolation')
         self.unroll = cfg.get('unroll', 10)
         self.use_recurrent = cfg.get('use_recurrent', True)
         self.ff_gain = cfg.get('ff_gain', 1.0)
@@ -95,7 +95,7 @@ class MCLIF(Module):
         else:
             # registering an empty size tensor is required for the static analyser
             self.register_buffer("recurrent", torch.empty(size=()))
-        self.tau_u_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_u)(
+        self.tau_u_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_u_method)(
             self.out_features,
             self.dt,
             self.tau_u_range[0],
@@ -103,7 +103,7 @@ class MCLIF(Module):
             **factory_kwargs, 
         )
         self.u0 = Parameter(torch.empty(self.out_features, **factory_kwargs), requires_grad=self.train_u0)
-        self.tau_d_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_d)(
+        self.tau_d_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_d_method)(
             self.out_features * self.num_compartments,
             self.dt,
             self.tau_d_range[0], 
@@ -112,7 +112,7 @@ class MCLIF(Module):
         )
         self.d0 = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs), requires_grad=False)
 
-        self.tau_t_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_t)(
+        self.tau_t_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_t_method)(
             self.out_features * self.num_compartments,
             self.dt,
             self.tau_t_range[0],
@@ -131,14 +131,14 @@ class MCLIF(Module):
                 s_cur = s_cur + cur_rec
             
             d = beta * d_tm1 + (1.0 - beta) * (d_cur)
-            d_thr = d - d_thr
-
-            t = gamma * t_tm1 + (1.0 - gamma) * spike_grad_injection_function(d_thr, self.alpha, self.c) 
-            # plateau = torch.where(t > self.epsilon, d_rest + self.u_p, torch.zeros_like(d_rest))
+            d_plateau = spike_grad_injection_function(d - d_thr, self.alpha, self.c)
+            d = d * (1 - d_plateau.detach()) + (d_rest * d_plateau.detach())
+            t = gamma * t_tm1 + (1.0 - gamma) * d_plateau
+            # d = d * (1 - t.detach()) + (d_rest * t.detach()) 
             plateau = torch.sigmoid(t - self.epsilon) * self.u_p + d_rest
-            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur) + plateau.sum(-1)
-            u_thr = u - s_thr
-            z = spike_grad_injection_function(u_thr, self.alpha, self.c)
+            
+            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur)
+            z = spike_grad_injection_function(u + plateau.sum(-1) - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest * z.detach()
             return (u, z, d, t), z
         self.step = step_fn
