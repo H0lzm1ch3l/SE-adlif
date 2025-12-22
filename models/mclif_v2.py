@@ -82,7 +82,14 @@ class MCLIF2(Module):
             
         self.tau_d_range = cfg.tau_d_range
         self.tau_t_range = cfg.tau_t_range
+        
         self.u_p = cfg.get('u_p', 0.5)
+        # maybe calculate gain from cfg u_p value
+        if cfg.get('train_u_p', True):
+            self.u_p = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs))
+            torch.nn.init.xavier_normal_(self.u_p)
+            print("Requires grad u_p", self.u_p.requires_grad)
+            print("u_p", self.u_p)
 
         self.weight = Parameter(
             torch.empty((self.out_features + self.out_features * self.num_compartments, self.in_features + self.in_features * self.num_compartments), **factory_kwargs)
