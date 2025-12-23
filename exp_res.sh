@@ -5,7 +5,7 @@
 experiments=("SHD_M3CLIF2")
 runs=5
 gpu_count=1  # Number of available GPUs
-gpu_offset=3
+gpu_offset=6
 
 for exp in "${experiments[@]}"; do
     for ((i=1; i<=runs; i++)); do
