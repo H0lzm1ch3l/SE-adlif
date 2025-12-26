@@ -139,7 +139,7 @@ class MCLIF2(Module):
             d = beta * d_tm1 + (1.0 - beta) * (d_cur)
             d_plateau = spike_grad_injection_function(d - d_thr, self.alpha, self.c)
             d = d * (1 - d_plateau.detach()) + (d_rest * d_plateau.detach())
-            t = gamma * t_tm1 + (1.0 - gamma) * d_plateau
+            t = gamma * t_tm1 + d_plateau
             # d = d * (1 - t.detach()) + (d_rest * t.detach()) 
             active_dendrite = torch.sigmoid(t - self.epsilon)
             
