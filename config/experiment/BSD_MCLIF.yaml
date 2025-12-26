@@ -1,65 +1,54 @@
 # @package _global_
 
 defaults:
-  - /dataset: shd
+  - /dataset: bsd
 
-exp_name: SHD_M3CLIF_V2
+exp_name: BSD_MCLIF
+
 # Whether to use a two-layer network
-two_layers: True
-# SLAYER parameters
-alpha: 5.0
-c: 0.1
-dt: 1.0
+two_layers: false
 # Dropout rate
-dropout: 0.15
+dropout: 0
+# Parameters of SLAYER
+alpha: 5
+c: 0.4
+dt: 1.0
 
 l1:
   # Which cell to use
-  cell: lif
-# input size of preprocessed SHD
-  input_size: 140
-  # number of neurons
-  n_neurons: 240
-  tau_u_range: [5, 25]
-  alpha: ${alpha}
-  c: ${c}
-  dt: ${dt}
-
-l2:
-  # Which cell to use
   cell: mclif_v2
-  input_size: 240
+  # input size of ECG
+  input_size: 10
   # number of neurons
-  n_neurons: 280
-
+  n_neurons: 510
   # Range of tau_u
   tau_u_range: [5, 25]
   tau_d_range: [1, 20]
   tau_t_range: [1, 60]
-  train_tau_u_method: 'interpolation'
-  train_tau_d_method: 'interpolation'
-  train_tau_t_method: 'interpolation'
   num_compartments: 3
   epsilon: 0.2
   train_u_p: True
   u_p: 0.2
-  # input size
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
 
 l_out:
-  input_size: 280
+  input_size: 510
   n_neurons: ${dataset.num_classes}
   # Time constant of output layer 
   tau_u_range: [15, 15]
   dt: ${dt}
 
+
+
+
+
 # Number of epochs
-n_epochs: 300
+n_epochs: 400
 
 # Batch size
-batch_size: 256
+batch_size: 128
 
 # Loss aggregation
 loss_agg: softmax
@@ -72,4 +61,4 @@ tracking_mode: max
 # learning rate of the optimizer
 lr: 0.01
 factor: 0.9
-patience: 9999
+patience: 9999 # no lr decay

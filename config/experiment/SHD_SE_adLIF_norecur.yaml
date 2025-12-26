@@ -3,53 +3,52 @@
 defaults:
   - /dataset: shd
 
-exp_name: SHD_M3CLIF_V2
+exp_name: SHD_SE_adLIF
+
 # Whether to use a two-layer network
-two_layers: True
+two_layers: true
 # SLAYER parameters
 alpha: 5.0
-c: 0.1
+c: 0.4
 dt: 1.0
 # Dropout rate
 dropout: 0.15
 
 l1:
   # Which cell to use
-  cell: lif
+  cell: se_adlif
 # input size of preprocessed SHD
   input_size: 140
   # number of neurons
-  n_neurons: 240
-  tau_u_range: [5, 25]
-  alpha: ${alpha}
-  c: ${c}
-  dt: ${dt}
-
-l2:
-  # Which cell to use
-  cell: mclif_v2
-  input_size: 240
-  # number of neurons
-  n_neurons: 280
-
+  n_neurons: 590
   # Range of tau_u
   tau_u_range: [5, 25]
-  tau_d_range: [1, 20]
-  tau_t_range: [1, 60]
-  train_tau_u_method: 'interpolation'
-  train_tau_d_method: 'interpolation'
-  train_tau_t_method: 'interpolation'
-  num_compartments: 3
-  epsilon: 0.2
-  train_u_p: True
-  u_p: 0.2
-  # input size
+  # Range of tau_w
+  tau_w_range: [60, 300]
+  # Factor for reparametrization of a and b (see paper)
+  q: 120
+  use_recurrent: false
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
-
+l2:
+  # Which cell to use
+  cell: se_adlif
+  input_size: 590
+  # number of neurons
+  n_neurons: 590
+  # Range of tau_u
+  tau_u_range: [5, 25]
+  # Range of tau_w
+  tau_w_range: [60, 300]
+  # Factor for reparametrization of a and b (see paper)
+  q: 120
+  use_recurrent: false
+  alpha: ${alpha}
+  c: ${c}
+  dt: ${dt}
 l_out:
-  input_size: 280
+  input_size: 590
   n_neurons: ${dataset.num_classes}
   # Time constant of output layer 
   tau_u_range: [15, 15]

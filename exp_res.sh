@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # experiments=("ECG_MC1adLIF" "ECG_MC2adLIF" "ECG_MC3adLIF" "SHD_MC1adLIF" "SHD_MC2adLIF" "SHD_MC3adLIF" "SSC_MC1adLIF" "SSC_MC2adLIF" "SSC_MC3adLIF")
-# experiments=("ECG_M1CLIF" "ECG_M2CLIF" "ECG_M3CLIF" "SHD_M1CLIF" "SHD_M2CLIF" "SHD_M3CLIF" "SSC_M1CLIF" "SSC_M2CLIF" "SSC_M3CLIF")
-experiments=("SHD_M3CLIF2")
+# experiments=("ECG_M1CLIF" "ECG_M2CLIF" "ECG_M3CLIF" "SHD_M1CLIF" "SHD_M2CLIF" "SHD_M3CLIF" "SSC_M1CLIF" "SSC_M2CLIF" "SSC_M3CLIF" "SHD_M3CLIF2")
+experiments=("SHD_SE_adLIF_norecur")
 runs=5
 gpu_count=1  # Number of available GPUs
-gpu_offset=6
+gpu_offset=3
 
 for exp in "${experiments[@]}"; do
     for ((i=1; i<=runs; i++)); do

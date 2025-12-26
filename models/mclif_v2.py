@@ -91,7 +91,7 @@ class MCLIF2(Module):
             self.u_p = cfg.get('u_p', 0.5)
 
         self.weight = Parameter(
-            torch.empty((self.out_features + self.out_features * self.num_compartments, self.in_features + self.in_features * self.num_compartments), **factory_kwargs)
+            torch.empty((self.out_features + self.out_features * self.num_compartments, self.in_features), **factory_kwargs)
         )
         self.bias = Parameter(torch.empty(self.out_features + self.out_features * self.num_compartments, **factory_kwargs))
         if self.use_recurrent:
