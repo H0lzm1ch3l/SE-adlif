@@ -136,7 +136,7 @@ class MCLIF2(Module):
                 cur_rec = F.linear(z_tm1, recurrent, None)
                 s_cur = s_cur + cur_rec
             
-            d = beta * d_tm1 + (1.0 - beta) * (d_cur)
+            d = beta * d_tm1 + (d_cur)
             d_plateau = spike_grad_injection_function(d - d_thr, self.alpha, self.c)
             d = d * (1 - d_plateau.detach()) + (d_rest * d_plateau.detach())
             t = gamma * t_tm1 + d_plateau
