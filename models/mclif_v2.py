@@ -136,7 +136,7 @@ class MCLIF2(Module):
                 cur_rec = F.linear(z_tm1, recurrent, None)
                 s_cur = s_cur + cur_rec
             
-            d = beta * d_tm1 + (d_cur)
+            d = beta * d_tm1 + (1 - beta) * (d_cur)
             d_plateau = spike_grad_injection_function(d - d_thr, self.alpha, self.c)
             d = d * (1 - d_plateau.detach()) + (d_rest * d_plateau.detach())
             t = gamma * t_tm1 + d_plateau
@@ -145,7 +145,7 @@ class MCLIF2(Module):
             
             plateau = active_dendrite * self.u_p + d_rest
                     
-            u = alpha * u_tm1 + s_cur + ((1.0 - active_dendrite) * d).sum(-1)
+            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur + ((1.0 - active_dendrite) * d).sum(-1))
             z = spike_grad_injection_function(u + plateau.sum(-1) - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest * z.detach()
             return (u, z, d, t), z
