@@ -5,16 +5,16 @@
 experiments=("SHD_M3CLIF2")
 runs=10
 gpu_count=1  # Number of available GPUs
-gpu_offset=3
+gpu_offset=1    
 
 for exp in "${experiments[@]}"; do
     for ((i=1; i<=runs; i++)); do
         gpu_id=$(( (i - 1) % gpu_count + gpu_offset ))
         echo "Running $exp - Iteration $i on GPU $gpu_id"
         if [[ $i -lt $runs ]]; then
-            uv run run.py experiment=$exp device=cuda:$gpu_id exp_name=SHD_M3CLIF2_faninplusnormaldin &
+            uv run run.py experiment=$exp device=cuda:$gpu_id exp_name=SHD_M3CLIF2_fanoutplusnormaldin &
         else
-            uv run run.py experiment=$exp device=cuda:$gpu_id exp_name=SHD_M3CLIF2_faninplusnormaldin
+            uv run run.py experiment=$exp device=cuda:$gpu_id exp_name=SHD_M3CLIF2_fanoutplusnormaldin
         fi
     done
 done
