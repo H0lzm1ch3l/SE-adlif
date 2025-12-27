@@ -145,7 +145,7 @@ class MCLIF2(Module):
             
             plateau = active_dendrite * self.u_p + d_rest
                     
-            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur + ((1.0 - active_dendrite) * d).sum(-1))
+            u = alpha * u_tm1 + (1.0 - alpha) * s_cur + ((1.0 - active_dendrite) * d).sum(-1)
             z = spike_grad_injection_function(u + plateau.sum(-1) - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest * z.detach()
             return (u, z, d, t), z
