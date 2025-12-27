@@ -86,9 +86,10 @@ class MCLIF2(Module):
         # maybe calculate gain from cfg u_p value
         if cfg.get('train_u_p', True):
             self.u_p = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs))
-            torch.nn.init.uniform_(self.u_p, 0, cfg.get('u_p', 0.5) * torch.sqrt(1 / torch.tensor(self.num_compartments)))
+            torch.nn.init.uniform_(self.u_p, 0, cfg.get('u_p', 0.5)/self.num_compartments * torch.sqrt(1 / torch.tensor(self.num_compartments)))
         else:
             self.u_p = cfg.get('u_p', 0.5)
+            self.u_p = self.u_p / self.num_compartments  # divide by num compartments to keep the total plateau potential constant
 
         self.weight = Parameter(
             torch.empty((self.out_features + self.out_features * self.num_compartments, self.in_features), **factory_kwargs)

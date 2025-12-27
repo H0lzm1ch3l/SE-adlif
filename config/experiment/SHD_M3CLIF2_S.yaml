@@ -28,7 +28,7 @@ l1:
   num_compartments: 3
   epsilon: 0.2
   train_u_p: True
-  u_p: 0.2
+  u_p: 0.6
   # input size
   alpha: ${alpha}
   c: ${c}
