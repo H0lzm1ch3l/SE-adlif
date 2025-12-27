@@ -35,9 +35,10 @@ def main(cfg: DictConfig):
     )
     
     nan_callback = pl.callbacks.early_stopping.EarlyStopping(monitor='train_loss_epoch', check_finite=True, patience=50)
+    tau_monitor = TauMonitor()
 
     # tau_monitor = TauMonitor()
-    callbacks = [model_ckpt_tracker, lr_monitor, nan_callback] # , tau_monitor]
+    callbacks = [model_ckpt_tracker, lr_monitor, nan_callback, tau_monitor]
 
     trainer: pl.Trainer = pl.Trainer(
         callbacks=callbacks,
