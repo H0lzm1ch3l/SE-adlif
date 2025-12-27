@@ -37,11 +37,11 @@ def main(cfg: DictConfig):
     nan_callback = pl.callbacks.early_stopping.EarlyStopping(monitor='train_loss_epoch', check_finite=True, patience=50)
 
     # tau_monitor = TauMonitor()
-    callbacks = [model_ckpt_tracker, lr_monitor] # , nan_callback] # , tau_monitor]
+    callbacks = [model_ckpt_tracker, lr_monitor, nan_callback] # , tau_monitor]
 
     trainer: pl.Trainer = pl.Trainer(
         callbacks=callbacks,
-        logger=pl.loggers.CSVLogger("logs", name="mlp_snn"),
+        logger=pl.loggers.TensorBoardLogger("tb_logs", name="mlp_snn"),
         max_epochs=cfg.n_epochs,
         gradient_clip_val=1.5,
         enable_progress_bar=True,
