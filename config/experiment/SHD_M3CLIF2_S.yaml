@@ -1,0 +1,61 @@
+# @package _global_
+
+defaults:
+  - /dataset: shd
+
+exp_name: SHD_M3CLIF_V2
+# Whether to use a two-layer network
+two_layers: False
+# SLAYER parameters
+alpha: 5.0
+c: 0.1
+dt: 1.0
+# Dropout rate
+dropout: 0.15
+
+l1:
+  # Which cell to use
+  cell: mclif_v2
+  input_size: 140
+  # number of neurons
+  n_neurons: 436
+
+  # Range of tau_u
+  tau_u_range: [5, 25]
+  tau_d_range: [1, 20]
+  tau_t_range: [1, 60]
+
+  num_compartments: 3
+  epsilon: 0.2
+  train_u_p: True
+  u_p: 0.2
+  # input size
+  alpha: ${alpha}
+  c: ${c}
+  dt: ${dt}
+
+l_out:
+  input_size: 436
+  n_neurons: ${dataset.num_classes}
+  # Time constant of output layer 
+  tau_u_range: [15, 15]
+  dt: ${dt}
+
+# Number of epochs
+n_epochs: 300
+
+# Batch size
+batch_size: 256
+
+# Loss aggregation
+loss_agg: softmax
+
+# Metric tracking
+tracking_metric: val_acc
+tracking_mode: max
+
+# optimizer parameters
+# learning rate of the optimizer
+lr: 0.01
+factor: 0.9
+patience: 9999
