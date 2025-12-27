@@ -77,7 +77,7 @@ class EFAdLIF(Module):
         
         if self.use_recurrent:
             self.recurrent = Parameter(
-                torch.empty((self.out_features,), **factory_kwargs)
+                torch.empty((self.out_features, self.out_features), **factory_kwargs)
             )
         else:
             # registering an empty size tensor is required for the static analyser when using jit.script

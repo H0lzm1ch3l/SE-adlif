@@ -22,6 +22,7 @@ l1:
   n_neurons: 360
   # Range of tau_u
   tau_u_range: [5, 25]
+  use_recurrent: True
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
@@ -31,10 +32,10 @@ l2:
   input_size: 360
   # number of neurons
   n_neurons: 360
-
   # Range of tau_u
   tau_u_range: [5, 25]
   # input size
+  use_recurrent: True
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
