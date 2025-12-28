@@ -78,7 +78,7 @@ class MCLIF2(Module):
         # maybe calculate gain from cfg u_p value
         if cfg.get('train_u_p', True):
             self.u_p = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs))
-            torch.nn.init.uniform_(self.u_p, -u_p * torch.sqrt(1 / torch.tensor(self.num_compartments)), u_p * torch.sqrt(1 / torch.tensor(self.num_compartments)))
+            torch.nn.init.uniform_(self.u_p, 0, u_p * torch.sqrt(1 / torch.tensor(self.num_compartments)))
         else:
             self.u_p = u_p
 
@@ -180,8 +180,8 @@ class MCLIF2(Module):
         self.tau_t_trainer.reset_parameters()
         torch.nn.init.uniform_(
             self.weight,
-            -self.ff_gain * torch.sqrt(1 / torch.tensor(self.out_features + self.out_features * self.num_compartments)),
-            self.ff_gain * torch.sqrt(1 / torch.tensor(self.out_features + self.out_features * self.num_compartments)),
+            -self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
+            self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
         )
         torch.nn.init.zeros_(self.bias)
         if self.use_recurrent:
