@@ -58,15 +58,6 @@ class MCLIF2(Module):
         self.c = cfg.get('c', 0.4)
         self.epsilon = cfg.get('epsilon', 0.5)
 
-        # this is where I add the multi-compartment parameters
-        # now what do i need
-        # - the number of compartments
-        # - the threshold for a dendritic compartment, for now just a scalar
-        # - the dendritic current state variable
-        # - the dendritic current decay
-        # - value of the plateau potential
-        # - tau for how long the plateau potential lasts
-
         self.num_compartments = cfg.get('num_compartments', 1)
         
         d_thr = cfg.get('d_thr', 1.0)
@@ -83,13 +74,13 @@ class MCLIF2(Module):
         self.tau_d_range = cfg.tau_d_range
         self.tau_t_range = cfg.tau_t_range
         
+        u_p = cfg.get('u_p', 0.5) / self.num_compartments # divide by num compartments to keep the total plateau potential constant
         # maybe calculate gain from cfg u_p value
         if cfg.get('train_u_p', True):
             self.u_p = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs))
-            torch.nn.init.uniform_(self.u_p, 0, cfg.get('u_p', 0.5) * torch.sqrt(1 / torch.tensor(self.num_compartments)))
+            torch.nn.init.uniform_(self.u_p, 0, u_p * torch.sqrt(1 / torch.tensor(self.num_compartments)))
         else:
-            self.u_p = cfg.get('u_p', 0.5)
-            self.u_p = self.u_p / self.num_compartments  # divide by num compartments to keep the total plateau potential constant
+            self.u_p = u_p
 
         self.weight = Parameter(
             torch.empty((self.out_features + self.out_features * self.num_compartments, self.in_features), **factory_kwargs)
