@@ -3,7 +3,7 @@
 defaults:
   - /dataset: shd
 
-exp_name: SHD_M3CLIF_V2_2layerMC
+exp_name: SHD_M3CLIF_V2_L
 # Whether to use a two-layer network
 two_layers: True
 # SLAYER parameters
@@ -15,12 +15,19 @@ dropout: 0.15
 
 l1:
   # Which cell to use
-  cell: lif
+  cell: mclif_v2
 # input size of preprocessed SHD
   input_size: 140
   # number of neurons
-  n_neurons: 240
+  n_neurons: 190
+  # Range of tau_u
   tau_u_range: [5, 25]
+  tau_d_range: [1, 20]
+  tau_t_range: [30, 300]
+  num_compartments: 3
+  epsilon: 0.2
+  train_u_p: True
+  u_p: 0.6
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
@@ -28,14 +35,14 @@ l1:
 l2:
   # Which cell to use
   cell: mclif_v2
-  input_size: 240
+  input_size: 190
   # number of neurons
   n_neurons: 280
 
   # Range of tau_u
   tau_u_range: [5, 25]
   tau_d_range: [1, 20]
-  tau_t_range: [1, 60]
+  tau_t_range: [30, 300]
   num_compartments: 3
   epsilon: 0.2
   train_u_p: True
