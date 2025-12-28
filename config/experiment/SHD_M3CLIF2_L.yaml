@@ -23,7 +23,7 @@ l1:
   # Range of tau_u
   tau_u_range: [5, 25]
   tau_d_range: [1, 20]
-  tau_t_range: [30, 300]
+  tau_t_range: [1, 60]
   num_compartments: 3
   epsilon: 0.2
   train_u_p: True
@@ -42,7 +42,7 @@ l2:
   # Range of tau_u
   tau_u_range: [5, 25]
   tau_d_range: [1, 20]
-  tau_t_range: [30, 300]
+  tau_t_range: [1, 60]
   num_compartments: 3
   epsilon: 0.2
   train_u_p: True

@@ -180,8 +180,8 @@ class MCLIF2(Module):
         self.tau_t_trainer.reset_parameters()
         torch.nn.init.uniform_(
             self.weight,
-            -self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
-            self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
+            -self.ff_gain * torch.sqrt(1 / torch.tensor(self.out_features + self.out_features * self.num_compartments)),
+            self.ff_gain * torch.sqrt(1 / torch.tensor(self.out_features + self.out_features * self.num_compartments)),
         )
         torch.nn.init.zeros_(self.bias)
         if self.use_recurrent:
