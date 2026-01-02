@@ -3,7 +3,7 @@
 defaults:
   - /dataset: shd
 
-exp_name: SHD_M3CLIF_V2
+exp_name: SHD_M3CLIF_V2_noR
 # Whether to use a two-layer network
 two_layers: False
 # SLAYER parameters
@@ -18,23 +18,24 @@ l1:
   cell: mclif_v2
   input_size: 140
   # number of neurons
-  n_neurons: 332
+  n_neurons: 750
 
   # Range of tau_u
   tau_u_range: [5, 25]
   tau_d_range: [1, 20]
   tau_t_range: [1, 60]
-  num_compartments: 6
+  num_compartments: 3
   epsilon: 0.2
   train_u_p: True
   u_p: 0.6
+  use_recurrent: False
   # input size
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
 
 l_out:
-  input_size: 332
+  input_size: 750
   n_neurons: ${dataset.num_classes}
   # Time constant of output layer 
   tau_u_range: [15, 15]
