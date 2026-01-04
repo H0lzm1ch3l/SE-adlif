@@ -2,6 +2,7 @@
 from typing import Optional, Sequence
 
 import torch._dynamo.guards
+from functional.activations import SLAYER
 from models.helpers import generic_scan, generic_scan_with_states, spike_grad_injection_function
 import torch
 import torch.nn.functional as F
@@ -133,7 +134,7 @@ class MCLIF2(Module):
             d = d * (1 - d_plateau.detach()) + (d_rest * d_plateau.detach())
             t = gamma * t_tm1 + d_plateau
             # d = d * (1 - t.detach()) + (d_rest * t.detach()) 
-            active_dendrite = torch.sigmoid(t - self.epsilon)
+            active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
             
             plateau = active_dendrite * self.u_p + d_rest
                     

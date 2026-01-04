@@ -19,7 +19,6 @@ class FastSigmoid(torch.autograd.Function):
         grad = grad_input / (ctx.k * torch.abs(mem) + 1.0) ** 2  # gradient of fast sigmoid on backward pass: Eq(4)
         return grad, None
     
-@staticmethod
 class SLAYER(torch.autograd.Function):
     @staticmethod
     def forward(ctx, mem, alpha=2.0, c=0.5):
