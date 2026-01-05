@@ -2,7 +2,6 @@
 from typing import Optional, Sequence
 
 import torch._dynamo.guards
-from functional.activations import SLAYER
 from models.helpers import generic_scan, generic_scan_with_states, spike_grad_injection_function
 import torch
 import torch.nn.functional as F
@@ -39,7 +38,8 @@ class MCLIF2(Module):
         self.train_tau_d_method = cfg.get('train_tau_d_method', 'interpolation')
         self.train_tau_t_method = cfg.get('train_tau_t_method', 'interpolation')
         self.unroll = cfg.get('unroll', 10)
-        self.use_recurrent = cfg.get('use_recurrent', True)
+        self.use_recurrent_base = cfg.get('use_recurrent', True)
+        self.use_recurrent_dendrite = cfg.get('use_recurrent_dendrite', False)
         self.ff_gain = cfg.get('ff_gain', 1.0)
         s_thr = cfg.get('s_thr', 1.0)
         self.num_out_neuron = cfg.get('num_out_neuron', self.out_features)
@@ -87,13 +87,23 @@ class MCLIF2(Module):
             torch.empty((self.out_features + self.out_features * self.num_compartments, self.in_features), **factory_kwargs)
         )
         self.bias = Parameter(torch.empty(self.out_features + self.out_features * self.num_compartments, **factory_kwargs))
-        if self.use_recurrent:
+        
+        if self.use_recurrent_base:
             self.recurrent = Parameter(
                     torch.empty((self.out_features, self.out_features), **factory_kwargs)
                 )
         else:
             # registering an empty size tensor is required for the static analyser
             self.register_buffer("recurrent", torch.empty(size=()))
+            
+        if self.use_recurrent_dendrite:
+            self.recurrent_dendrite = Parameter(
+                    torch.empty((self.out_features, self.num_compartments), **factory_kwargs)
+                )
+        else:
+            # registering an empty size tensor is required for the static analyser
+            self.register_buffer("recurrent_dendrite", torch.empty(size=()))
+        
         self.tau_u_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_u_method)(
             self.out_features,
             self.dt,
@@ -122,26 +132,30 @@ class MCLIF2(Module):
         
         self.reset_parameters()
         def step_fn(recurrent, alpha, beta, gamma, s_thr, d_thr, u_rest, d_rest, carry, s_cur, d_cur):
-            u_tm1, z_tm1, d_tm1, t_tm1 = carry
+            u_tm1, z_tm1, d_tm1, t_tm1, dap_tm1 = carry
             beta = beta.reshape(-1, self.num_compartments)
             gamma = gamma.reshape(-1, self.num_compartments)
-            if self.use_recurrent:
+            if self.use_recurrent_base:
                 cur_rec = F.linear(z_tm1, recurrent, None)
                 s_cur = s_cur + cur_rec
-            
-            d = beta * d_tm1 + d_cur
-            d_plateau = spike_grad_injection_function(d - d_thr, self.alpha, self.c)
-            d = d * (1 - d_plateau.detach()) + (d_rest * d_plateau.detach())
-            t = gamma * t_tm1 + d_plateau
+            if self.use_recurrent_dendrite:
+                cur_rec_dend = F.linear(dap_tm1, self.recurrent_dendrite, None)
+                print("cur rec_dend shape:", cur_rec_dend.shape)
+                d_cur = d_cur + cur_rec_dend.unsqueeze(-1)
+            exit()
+            d = beta * d_tm1 + (1 - beta) * (d_cur)
+            dap = spike_grad_injection_function(d - d_thr, self.alpha, self.c)
+            d = d * (1 - dap.detach()) + (d_rest * dap.detach())
+            t = gamma * t_tm1 + dap
             # d = d * (1 - t.detach()) + (d_rest * t.detach()) 
-            active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
+            active_dendrite = torch.sigmoid(t - self.epsilon)
             
             plateau = active_dendrite * self.u_p + d_rest
                     
             u = alpha * u_tm1 + (1.0 - alpha) * s_cur + ((1.0 - active_dendrite) * d).sum(-1)
             z = spike_grad_injection_function(u + plateau.sum(-1) - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest * z.detach()
-            return (u, z, d, t), z
+            return (u, z, d, t, dap), z
         self.step = step_fn
         
         def wrapped_scan(u0: Parameter, z0: Tensor, d0: Parameter, t0: Parameter, x: Tensor,
@@ -185,7 +199,7 @@ class MCLIF2(Module):
             self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
         )
         torch.nn.init.zeros_(self.bias)
-        if self.use_recurrent:
+        if self.use_recurrent_base:
             torch.nn.init.orthogonal_(
                 self.recurrent,
                 gain=1.0,
