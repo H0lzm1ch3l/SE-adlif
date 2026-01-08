@@ -2,7 +2,7 @@
 from typing import Optional, Sequence
 
 import torch._dynamo.guards
-from functional.activations import SLAYER
+from functional.activations import SLAYER, FastSigmoid, Sigmoid
 from models.helpers import generic_scan, generic_scan_with_states, spike_grad_injection_function
 import torch
 import torch.nn.functional as F
@@ -31,10 +31,6 @@ class MCLIF2(Module):
         self.out_features = cfg.n_neurons
         self.dt = cfg.get('dt', 1.0)
         self.tau_u_range = cfg.tau_u_range
-        # self.train_tau_u = cfg.get('train_tau_u', 'interpolation')
-        # self.train_tau_d = cfg.get('train_tau_d', 'interpolation')
-        # self.train_tau_p = cfg.get('train_tau_p', 'fixed')
-        # TODO: I wanna check if the config even has these keys, thats why I don't use cfg.get
         self.train_tau_u_method = cfg.get('train_tau_u_method', 'interpolation')
         self.train_tau_d_method = cfg.get('train_tau_d_method', 'interpolation')
         self.train_tau_t_method = cfg.get('train_tau_t_method', 'interpolation')
@@ -77,10 +73,12 @@ class MCLIF2(Module):
         
         u_p = cfg.get('u_p', 0.5) / self.num_compartments # divide by num compartments to keep the total plateau potential constant
         # maybe calculate gain from cfg u_p value
-        if cfg.get('train_u_p', True):
+        self.train_u_p = cfg.get('u_p_gain', True)
+        if self.train_u_p:
             self.u_p = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs))
-            torch.nn.init.uniform_(self.u_p, 0, u_p * torch.sqrt(1 / torch.tensor(self.num_compartments)))
+            self.u_p_gain = u_p
         else:
+            self.register_buffer("u_p", torch.empty(size=()))
             self.u_p = u_p
 
         self.weight = Parameter(
@@ -128,19 +126,19 @@ class MCLIF2(Module):
             if self.use_recurrent:
                 cur_rec = F.linear(z_tm1, recurrent, None)
                 s_cur = s_cur + cur_rec
-            
-            d = beta * d_tm1 + d_cur
-            d_plateau = spike_grad_injection_function(d - d_thr, self.alpha, self.c)
+        
+            d = beta * d_tm1 + (1.0 - beta) * d_cur
+            d_plateau = SLAYER.apply(d - d_thr, self.alpha, self.c)
             d = d * (1 - d_plateau.detach()) + (d_rest * d_plateau.detach())
-            t = gamma * t_tm1 + d_plateau
+            t = gamma * t_tm1 + (1.0 - gamma) * d_plateau
             # d = d * (1 - t.detach()) + (d_rest * t.detach()) 
             active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
-            
             plateau = active_dendrite * self.u_p + d_rest
                     
-            u = alpha * u_tm1 + (1.0 - alpha) * s_cur + ((1.0 - active_dendrite) * d).sum(-1)
-            z = spike_grad_injection_function(u + plateau.sum(-1) - s_thr, self.alpha, self.c)
+            u = alpha * u_tm1 + (1.0 - alpha) * s_cur + (1.0 - alpha) * ((1.0 - active_dendrite) * d).sum(-1)
+            z = SLAYER.apply(u + plateau.sum(-1) - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest * z.detach()
+            
             return (u, z, d, t), z
         self.step = step_fn
         
@@ -179,17 +177,28 @@ class MCLIF2(Module):
         self.tau_u_trainer.reset_parameters()
         self.tau_d_trainer.reset_parameters()
         self.tau_t_trainer.reset_parameters()
+        # init the first out_features weights as soma weights and the rest as dendritic weights so that they are smaller
         torch.nn.init.uniform_(
-            self.weight,
+            self.weight[:self.num_out_neuron, :],
             -self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
             self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
         )
+        for c_idx in range(self.num_compartments):
+            start = self.num_out_neuron + c_idx * self.num_out_neuron
+            end = self.num_out_neuron + (c_idx + 1) * self.num_out_neuron
+            torch.nn.init.uniform_(
+                self.weight[start:end, :],
+                - self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features * self.num_compartments)),
+                self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features * self.num_compartments)),
+            )
         torch.nn.init.zeros_(self.bias)
         if self.use_recurrent:
             torch.nn.init.orthogonal_(
                 self.recurrent,
                 gain=1.0,
             )
+        if self.train_u_p:
+            torch.nn.init.uniform_(self.u_p, 0, self.u_p_gain * torch.sqrt(1 / torch.tensor(self.num_compartments)))
         # h0 states 
         if self.train_u0:
             torch.nn.init.uniform_(self.u0, 0, self.s_thr[0].item())
@@ -265,5 +274,6 @@ class MCLIF2(Module):
         self.tau_d_trainer.apply_parameter_constraints()
         self.tau_t_trainer.apply_parameter_constraints()
         self.u0.data = self.u0 - torch.sign(self.u0)*torch.relu(torch.abs(self.u0) - self.s_thr)
+        self.d0.data = self.d0 - torch.sign(self.d0)*torch.relu(torch.abs(self.d0) - self.d_thr)
         self.s_thr.data = torch.maximum(self.s_thr, torch.zeros_like(self.s_thr))
-        self.d_thr = torch.maximum(self.d_thr, torch.zeros_like(self.d_thr))
+        self.d_thr.data = torch.maximum(self.d_thr, torch.zeros_like(self.d_thr))

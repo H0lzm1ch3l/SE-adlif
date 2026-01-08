@@ -6,7 +6,7 @@
 experiments=("SHD_M3CLIF2_L")
 runs=10
 gpu_count=1  # Number of available GPUs
-gpu_offset=7
+gpu_offset=3
 
 # no recurrent command
 # exp_name=SHD_LIF_2layer_norecurrent l1.use_recurrent=False l2.use_recurrent=False l1.n_neurons=590 l2.input_size=590 l2.n_neurons=590 l_out.input_size=590

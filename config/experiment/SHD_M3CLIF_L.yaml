@@ -3,7 +3,7 @@
 defaults:
   - /dataset: shd
 
-exp_name: SHD_M3CLIF_V2_L
+exp_name: SHD_M3CLIF_L
 # Whether to use a two-layer network
 two_layers: True
 # SLAYER parameters
@@ -15,52 +15,48 @@ dropout: 0.15
 
 l1:
   # Which cell to use
-  cell: mclif_v2
+  cell: mclif
 # input size of preprocessed SHD
-  input_size: 140
+  input_size: 35
   # number of neurons
-  n_neurons: 220
-  # ff_gain: 0.9
+  n_neurons: 180
   # Range of tau_u
   tau_u_range: [5, 25]
   tau_d_range: [1, 20]
   tau_t_range: [10, 60]
-  num_compartments: 2
+  num_compartments: 3
   epsilon: 0.2
-  train_u_p: True
-  u_p: 0.6
+  u_p: 0.2
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
 
 l2:
   # Which cell to use
-  cell: mclif_v2
-  input_size: 220
+  cell: mclif
+  input_size: 45
   # number of neurons
-  n_neurons: 310
-  # ff_gain: 0.8
+  n_neurons: 180
   # Range of tau_u
   tau_u_range: [5, 25]
   tau_d_range: [1, 20]
   tau_t_range: [10, 60]
-  num_compartments: 2
+  num_compartments: 3
   epsilon: 0.2
-  train_u_p: True
-  u_p: 0.6
+  u_p: 0.2
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
 
 l_out:
-  input_size: 310
+  input_size: 180
   n_neurons: ${dataset.num_classes}
   # Time constant of output layer 
   tau_u_range: [15, 15]
   dt: ${dt}
 
 # Number of epochs
-n_epochs: 300
+n_epochs: 50
 
 # Batch size
 batch_size: 256
