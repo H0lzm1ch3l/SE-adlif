@@ -177,20 +177,39 @@ class MCLIF2(Module):
         self.tau_u_trainer.reset_parameters()
         self.tau_d_trainer.reset_parameters()
         self.tau_t_trainer.reset_parameters()
-        # init the first out_features weights as soma weights and the rest as dendritic weights so that they are smaller
-        torch.nn.init.uniform_(
-            self.weight[:self.num_out_neuron, :],
-            -self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
-            self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
-        )
+        
+        # custom init code
+        soma_decay = self.tau_u_trainer.get_decay()
+        soma_bound = self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features)) * soma_decay # * torch.sqrt(1 - self.tau_u_trainer.get_decay())
+        self.weight.data[:self.num_out_neuron, :] = torch.distributions.uniform.Uniform(
+            -soma_bound,
+            soma_bound,
+        ).sample((self.in_features,)).T
+        
         for c_idx in range(self.num_compartments):
             start = self.num_out_neuron + c_idx * self.num_out_neuron
             end = self.num_out_neuron + (c_idx + 1) * self.num_out_neuron
-            torch.nn.init.uniform_(
-                self.weight[start:end, :],
-                - self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features * self.num_compartments)),
-                self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features * self.num_compartments)),
-            )
+            decay = self.tau_d_trainer.get_decay()[start - self.num_out_neuron:end - self.num_out_neuron]
+            bound = self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features)) * decay # * torch.sqrt(1 - self.tau_d_trainer.get_decay()[start-self.num_out_neuron:end-self.num_out_neuron])
+            self.weight.data[start:end, :] = torch.distributions.uniform.Uniform(
+                -bound,
+                bound,
+            ).sample((self.in_features,)).T
+        
+        # init the first out_features weights as soma weights and the rest as dendritic weights so that they are smaller
+        # torch.nn.init.normal_(
+        #     self.weight[:self.num_out_neuron, :],
+        #     -self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features * self.tau_u_trainer.get_tau())),
+        #     self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features * self.tau_u_trainer.get_tau())),
+        # )
+        # for c_idx in range(self.num_compartments):
+        #     start = self.num_out_neuron + c_idx * self.num_out_neuron
+        #     end = self.num_out_neuron + (c_idx + 1) * self.num_out_neuron
+        #     torch.nn.init.normal_(
+        #         self.weight[start:end, :],
+        #         - self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features * self.num_compartments * self.tau_d_trainer.get_tau()[c_idx])),
+        #         self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features * self.num_compartments * self.tau_d_trainer.get_tau()[c_idx])),
+        #     )
         torch.nn.init.zeros_(self.bias)
         if self.use_recurrent:
             torch.nn.init.orthogonal_(
