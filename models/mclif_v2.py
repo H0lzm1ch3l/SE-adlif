@@ -175,7 +175,7 @@ class MCLIF2(Module):
         self.wrapped_scan = wrapped_scan
         self.wrapped_scan_with_states = wrapped_scan_with_states
         
-    def _leak_comp_adj_init(self):
+    def _leak_adj_init(self):
                 # custom init code
         soma_bound = self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features)) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
         self.weight.data[:self.num_out_neuron, :] = torch.distributions.uniform.Uniform(
@@ -199,16 +199,17 @@ class MCLIF2(Module):
         self.tau_t_trainer.reset_parameters()
         
         # self._leak_comp_adj_init()
-        
-        if self.s_thr == self.d_thr:
-        # Decay Adjusted Aurora Micheli Init @https://github.com/AuroraMicheli/Weight-Initialization-SNN:
-            decay = torch.cat((self.tau_u_trainer.get_decay(), self.tau_d_trainer.get_decay()), dim=0)
-            area_from_threshold_to_infinity = 1 - torch.distributions.normal.Normal(0, 1).cdf(self.s_thr)
-            var_w_optimal = 1/(self.in_features*area_from_threshold_to_infinity) * torch.sqrt(1 - decay)
-            self.weight.data = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((self.in_features,)).T
-        else:
-            raise NotImplementedError("Only s_thr == d_thr initialization is implemented.")
-
+        # Decay + Compartment adjusted Aurora Micheli Init @https://github.com/AuroraMicheli/Weight-Initialization-SNN:
+        area_from_threshold_to_infinity = 1 - torch.distributions.normal.Normal(0, 1).cdf(self.s_thr)
+        var_w_optimal = 1/(self.in_features*area_from_threshold_to_infinity) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
+        self.weight.data[:self.num_out_neuron, :] = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((self.in_features,)).T
+        for c_idx in range(self.num_compartments):
+            start = self.num_out_neuron + c_idx * self.num_out_neuron
+            end = self.num_out_neuron + (c_idx + 1) * self.num_out_neuron
+            decay = self.tau_d_trainer.get_decay()[start - self.num_out_neuron:end - self.num_out_neuron]
+            area_from_threshold_to_infinity = 1 - torch.distributions.normal.Normal(0, 1).cdf(self.d_thr)
+            var_w_optimal = 1/(self.in_features*area_from_threshold_to_infinity*self.num_compartments) * torch.sqrt(1 - decay)
+            self.weight.data[start:end, :] = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((self.in_features,)).T
         torch.nn.init.zeros_(self.bias)
         if self.use_recurrent:
             torch.nn.init.orthogonal_(
