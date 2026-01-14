@@ -201,12 +201,11 @@ class MCLIF2(Module):
         # self._leak_comp_adj_init()
         
         if self.s_thr == self.d_thr:
-        # Aurora Micheli Init @https://github.com/AuroraMicheli/Weight-Initialization-SNN:
-            probability_below_threshold = norm.cdf(self.s_thr).item()
-            area_from_threshold_to_infinity = 1 - probability_below_threshold
-            var_w_optimal = 1/(self.in_features*area_from_threshold_to_infinity)
-
-            torch.nn.init.normal_(self.weight, mean=0, std=math.sqrt(var_w_optimal))
+        # Decay Adjusted Aurora Micheli Init @https://github.com/AuroraMicheli/Weight-Initialization-SNN:
+            decay = torch.cat((self.tau_u_trainer.get_decay(), self.tau_d_trainer.get_decay()), dim=0)
+            area_from_threshold_to_infinity = 1 - torch.distributions.normal.Normal(0, 1).cdf(self.s_thr)
+            var_w_optimal = 1/(self.in_features*area_from_threshold_to_infinity) * torch.sqrt(1 - decay)
+            self.weight.data = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((self.in_features,)).T
         else:
             raise NotImplementedError("Only s_thr == d_thr initialization is implemented.")
 
