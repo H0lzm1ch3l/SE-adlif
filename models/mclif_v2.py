@@ -217,9 +217,9 @@ class MCLIF2(Module):
                 gain=1.0,
             )
         if self.train_u_p:
-            area_from_threshold_to_infinity = 1 - torch.distributions.normal.Normal(0, 1).cdf(self.s_thr)
-            var_p = self.u_p_gain * 1/(self.num_compartments*area_from_threshold_to_infinity) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
-            self.u_p.data = torch.distributions.normal.Normal(0, torch.sqrt(var_p)).sample((self.num_compartments,)).T
+            area_from_threshold_to_infinity = 1 - torch.distributions.uniform.Uniform(0, 1).cdf(self.s_thr)
+            bound_p = self.u_p_gain * 3/(self.num_compartments*area_from_threshold_to_infinity) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
+            self.u_p.data = torch.distributions.uniform.Uniform(0, bound_p).sample((self.num_compartments,)).T
         # h0 states 
         if self.train_u0:
             torch.nn.init.uniform_(self.u0, 0, self.s_thr[0].item())
