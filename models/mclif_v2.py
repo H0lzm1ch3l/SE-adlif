@@ -132,7 +132,7 @@ class MCLIF2(Module):
             d = beta * d_tm1 + (1.0 - beta) * d_cur
             d_plateau = SLAYER.apply(d - d_thr, self.alpha, self.c)
             d = d * (1 - d_plateau.detach()) + (d_rest * d_plateau.detach())
-            t = gamma * t_tm1 + (1.0 - gamma) * d_plateau
+            t = gamma * t_tm1 + (1-gamma) * d_plateau
             # d = d * (1 - t.detach()) + (d_rest * t.detach()) 
             active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
             plateau = active_dendrite * self.u_p + d_rest
@@ -217,7 +217,9 @@ class MCLIF2(Module):
                 gain=1.0,
             )
         if self.train_u_p:
-            torch.nn.init.uniform_(self.u_p, 0, self.u_p_gain * torch.sqrt(1 / torch.tensor(self.num_compartments)))
+            area_from_threshold_to_infinity = 1 - torch.distributions.normal.Normal(0, 1).cdf(self.s_thr)
+            var_p = self.u_p_gain * 1/(self.num_compartments*area_from_threshold_to_infinity) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
+            self.u_p.data = torch.distributions.normal.Normal(0, torch.sqrt(var_p)).sample((self.num_compartments,)).T
         # h0 states 
         if self.train_u0:
             torch.nn.init.uniform_(self.u0, 0, self.s_thr[0].item())
