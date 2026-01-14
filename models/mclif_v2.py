@@ -1,4 +1,5 @@
 
+import math
 from typing import Optional, Sequence
 
 import torch._dynamo.guards
@@ -8,6 +9,7 @@ import torch
 import torch.nn.functional as F
 from torch.nn import Module
 from torch import Tensor
+from scipy.stats import norm
 from torch.nn.parameter import Parameter
 
 from module.tau_trainers import TauTrainer, get_tau_trainer_class
@@ -172,13 +174,9 @@ class MCLIF2(Module):
         
         self.wrapped_scan = wrapped_scan
         self.wrapped_scan_with_states = wrapped_scan_with_states
-
-    def reset_parameters(self):
-        self.tau_u_trainer.reset_parameters()
-        self.tau_d_trainer.reset_parameters()
-        self.tau_t_trainer.reset_parameters()
         
-        # custom init code
+    def _leak_comp_adj_init(self):
+                # custom init code
         soma_bound = self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features)) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
         self.weight.data[:self.num_out_neuron, :] = torch.distributions.uniform.Uniform(
             -soma_bound,
@@ -194,21 +192,24 @@ class MCLIF2(Module):
                 -bound,
                 bound,
             ).sample((self.in_features,)).T
+
+    def reset_parameters(self):
+        self.tau_u_trainer.reset_parameters()
+        self.tau_d_trainer.reset_parameters()
+        self.tau_t_trainer.reset_parameters()
         
-        # init the first out_features weights as soma weights and the rest as dendritic weights so that they are smaller
-        # torch.nn.init.normal_(
-        #     self.weight[:self.num_out_neuron, :],
-        #     -self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features * self.tau_u_trainer.get_tau())),
-        #     self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features * self.tau_u_trainer.get_tau())),
-        # )
-        # for c_idx in range(self.num_compartments):
-        #     start = self.num_out_neuron + c_idx * self.num_out_neuron
-        #     end = self.num_out_neuron + (c_idx + 1) * self.num_out_neuron
-        #     torch.nn.init.normal_(
-        #         self.weight[start:end, :],
-        #         - self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features * self.num_compartments * self.tau_d_trainer.get_tau()[c_idx])),
-        #         self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features * self.num_compartments * self.tau_d_trainer.get_tau()[c_idx])),
-        #     )
+        # self._leak_comp_adj_init()
+        
+        if self.s_thr == self.d_thr:
+        # Aurora Micheli Init @https://github.com/AuroraMicheli/Weight-Initialization-SNN:
+            probability_below_threshold = norm.cdf(self.s_thr).item()
+            area_from_threshold_to_infinity = 1 - probability_below_threshold
+            var_w_optimal = 1/(self.in_features*area_from_threshold_to_infinity)
+
+            torch.nn.init.normal_(self.weight, mean=0, std=math.sqrt(var_w_optimal))
+        else:
+            raise NotImplementedError("Only s_thr == d_thr initialization is implemented.")
+
         torch.nn.init.zeros_(self.bias)
         if self.use_recurrent:
             torch.nn.init.orthogonal_(
