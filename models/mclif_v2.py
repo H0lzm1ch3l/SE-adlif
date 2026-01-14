@@ -179,8 +179,7 @@ class MCLIF2(Module):
         self.tau_t_trainer.reset_parameters()
         
         # custom init code
-        soma_decay = self.tau_u_trainer.get_decay()
-        soma_bound = self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features)) * soma_decay # * torch.sqrt(1 - self.tau_u_trainer.get_decay())
+        soma_bound = self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features)) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
         self.weight.data[:self.num_out_neuron, :] = torch.distributions.uniform.Uniform(
             -soma_bound,
             soma_bound,
@@ -190,7 +189,7 @@ class MCLIF2(Module):
             start = self.num_out_neuron + c_idx * self.num_out_neuron
             end = self.num_out_neuron + (c_idx + 1) * self.num_out_neuron
             decay = self.tau_d_trainer.get_decay()[start - self.num_out_neuron:end - self.num_out_neuron]
-            bound = self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features)) * decay # * torch.sqrt(1 - self.tau_d_trainer.get_decay()[start-self.num_out_neuron:end-self.num_out_neuron])
+            bound = self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features)) * torch.sqrt(1 - decay)
             self.weight.data[start:end, :] = torch.distributions.uniform.Uniform(
                 -bound,
                 bound,
