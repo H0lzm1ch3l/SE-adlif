@@ -200,16 +200,15 @@ class MCLIF2(Module):
         
         # self._leak_comp_adj_init()
         # Decay + Compartment adjusted Aurora Micheli Init @https://github.com/AuroraMicheli/Weight-Initialization-SNN:
-        area_from_threshold_to_infinity = 1 - torch.distributions.normal.Normal(0, 1).cdf(self.s_thr)
-        var_w_optimal = 1/(self.in_features*area_from_threshold_to_infinity) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
-        self.weight.data[:self.num_out_neuron, :] = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((self.in_features,)).T
-        for c_idx in range(self.num_compartments):
-            start = self.num_out_neuron + c_idx * self.num_out_neuron
-            end = self.num_out_neuron + (c_idx + 1) * self.num_out_neuron
-            decay = self.tau_d_trainer.get_decay()[start - self.num_out_neuron:end - self.num_out_neuron]
-            area_from_threshold_to_infinity = 1 - torch.distributions.normal.Normal(0, 1).cdf(self.d_thr)
-            var_w_optimal = 1/(self.in_features*area_from_threshold_to_infinity*self.num_compartments) * torch.sqrt(1 - decay)
-            self.weight.data[start:end, :] = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((self.in_features,)).T
+        if self.s_thr == self.d_thr:
+            decays = torch.cat((self.tau_u_trainer.get_decay(), self.tau_d_trainer.get_decay()), dim=0)
+            M = torch.cat((torch.ones(self.out_features, device=decays.device), torch.ones(self.out_features * self.num_compartments, device=decays.device) * self.num_compartments), dim=0)
+            area_from_threshold_to_infinity = 1 - torch.distributions.normal.Normal(0, 1).cdf(self.s_thr)
+            var_w_optimal = 1/(self.in_features*area_from_threshold_to_infinity * M) * torch.sqrt(1 - decays)
+            self.weight.data = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((self.in_features,)).T
+        else:
+            raise NotImplementedError("Different thresholds for soma and dendrites not supported in Micheli init.")
+       
         torch.nn.init.zeros_(self.bias)
         if self.use_recurrent:
             torch.nn.init.orthogonal_(
