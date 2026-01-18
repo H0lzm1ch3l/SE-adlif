@@ -131,13 +131,12 @@ class MCLIF2(Module):
         
             d = beta * d_tm1 + (1.0 - beta) * d_cur
             d_plateau = SLAYER.apply(d - d_thr, self.alpha, self.c)
-            d = d * (1 - d_plateau.detach()) + (d_rest * d_plateau.detach())
             t = gamma * t_tm1 + (1-gamma) * d_plateau
             # d = d * (1 - t.detach()) + (d_rest * t.detach()) 
             active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
-            dendritic_influx = (active_dendrite * self.u_p) + d
+            d = (active_dendrite * self.u_p) + d
                     
-            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur + dendritic_influx.sum(-1))
+            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur + d.sum(-1))
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest * z.detach()
             
