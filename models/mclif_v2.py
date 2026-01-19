@@ -38,8 +38,10 @@ class MCLIF2(Module):
         self.train_tau_t_method = cfg.get('train_tau_t_method', 'interpolation')
         self.unroll = cfg.get('unroll', 10)
         self.use_recurrent = cfg.get('use_recurrent', True)
+        self.recurrent_dendrite = cfg.get('recurrent_dendrite', False)
         self.ff_gain = cfg.get('ff_gain', 1.0)
         s_thr = cfg.get('s_thr', 1.0)
+        d_thr = cfg.get('d_thr', 1.0)
         self.num_out_neuron = cfg.get('num_out_neuron', self.out_features)
         self.use_u_rest = cfg.get('use_u_rest', False)
         self.train_u0 = cfg.get('train_u0', False)
@@ -47,7 +49,7 @@ class MCLIF2(Module):
             s_thr = torch.FloatTensor(self.out_features, device=device).uniform_(s_thr[0], s_thr[1])
         else:
             s_thr = torch.Tensor([s_thr,])
-        if cfg.get('train_thr', False):
+        if cfg.get('train_s_thr', False):
             self.s_thr = Parameter(s_thr)
         else:
             self.register_buffer('s_thr', s_thr)
@@ -59,12 +61,11 @@ class MCLIF2(Module):
 
         self.num_compartments = cfg.get('num_compartments', 1)
         
-        d_thr = cfg.get('d_thr', 1.0)
         if isinstance(d_thr, Sequence):
             d_thr = torch.FloatTensor(self.out_features, device=device).uniform_(d_thr[0], d_thr[1])
         else:
             d_thr = torch.Tensor([d_thr,])
-        if cfg.get('train_thr', False):
+        if cfg.get('train_d_thr', False):
             self.d_thr = Parameter(d_thr)
         else:
             self.register_buffer('d_thr', d_thr)
@@ -94,6 +95,14 @@ class MCLIF2(Module):
         else:
             # registering an empty size tensor is required for the static analyser
             self.register_buffer("recurrent", torch.empty(size=()))
+        # add weights for intra neuron dendritic recurrence
+        if self.recurrent_dendrite:
+            self.dendritic_recurrent = Parameter(
+                    torch.empty((self.out_features, self.num_compartments, self.num_compartments), **factory_kwargs)
+                )
+        else:
+            # registering an empty size tensor is required for the static analyser
+            self.register_buffer("dendritic_recurrent", torch.empty(size=()))
         self.tau_u_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_u_method)(
             self.out_features,
             self.dt,
@@ -121,26 +130,39 @@ class MCLIF2(Module):
         self.t0 = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs), requires_grad=False)
         
         self.reset_parameters()
-        def step_fn(recurrent, alpha, beta, gamma, s_thr, d_thr, u_rest, d_rest, carry, s_cur, d_cur):
-            u_tm1, z_tm1, d_tm1, t_tm1 = carry
+        def step_fn(alpha, beta, gamma, s_thr, d_thr, u_rest, d_rest, carry, s_cur, d_cur):
+            u_tm1, z_tm1, d_tm1, t_tm1, p_tm1 = carry
             beta = beta.reshape(-1, self.num_compartments)
             gamma = gamma.reshape(-1, self.num_compartments)
+            
             if self.use_recurrent:
-                cur_rec = F.linear(z_tm1, recurrent, None)
+                cur_rec = F.linear(z_tm1, self.recurrent, None)
                 s_cur = s_cur + cur_rec
-        
+                
+            if self.recurrent_dendrite:
+                # cur_rec_d = F.linear(p_tm1, self.dendritic_recurrent, None)
+                cur_rec_d = torch.einsum('bni,nij->bnj', p_tm1, self.dendritic_recurrent)
+                d_cur = d_cur + cur_rec_d
+
             d = beta * d_tm1 + (1.0 - beta) * d_cur
-            d_plateau = SLAYER.apply(d - d_thr, self.alpha, self.c)
-            t = gamma * t_tm1 + (1-gamma) * d_plateau
-            # d = d * (1 - t.detach()) + (d_rest * t.detach()) 
-            active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
-            d = (active_dendrite * self.u_p) + d
+            p = SLAYER.apply(d - d_thr, self.alpha, self.c)
+            
+            # create a mask tensor that is the inverse of p_tm1 -> where p_tm1 is zero, the mask is one, else zero
+            p_mask = (p_tm1 == 0).float()
+            t = F.relu(gamma * t_tm1 + p_mask * p + p_tm1 * d_cur)
+            p = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
+            d = p * self.u_p + d
+            
+            # if the active dendrite is 0 but p_tm1 was 1, we want to reset the dendritic potential to d_rest
+            inactive_reset_mask = (p == 0).float() * (p_tm1 == 1).float()
+            d = d * (1 - inactive_reset_mask.detach()) + (d_rest * inactive_reset_mask.detach())
+            # now finally we only want p to be 1 where the dendrite is active and was not deactivated this step
                     
             u = alpha * u_tm1 + (1.0 - alpha) * (s_cur + d.sum(-1))
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest * z.detach()
             
-            return (u, z, d, t), z
+            return (u, z, d, t, p), z
         self.step = step_fn
         
         def wrapped_scan(u0: Parameter, z0: Tensor, d0: Parameter, t0: Parameter, x: Tensor,
@@ -214,6 +236,13 @@ class MCLIF2(Module):
                 self.recurrent,
                 gain=1.0,
             )
+        # intra neuron recurrence init 
+        if self.recurrent_dendrite:
+            for i in range(self.num_out_neuron):
+                torch.nn.init.orthogonal_(
+                    self.dendritic_recurrent[i],
+                    gain=1.0,
+                )
         if self.train_u_p:
             # area_from_threshold_to_infinity = 1 - torch.distributions.uniform.Uniform(0, 1).cdf(self.s_thr)
             # bound_p = self.u_p_gain * 3/(self.num_compartments*area_from_threshold_to_infinity) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
@@ -247,7 +276,13 @@ class MCLIF2(Module):
                         layout=None,
                         pin_memory=None
                         )
-        return self.u0.unsqueeze(0), z, d, t
+        p = torch.zeros(size=dend_size,
+                        device=device,
+                        dtype=torch.float,
+                        layout=None,
+                        pin_memory=None
+                        )
+        return self.u0.unsqueeze(0), z, d, t, p
     
     def forward(self, input_tensor: Tensor, states: tuple[Tensor, Tensor]) -> tuple[Tensor, Tensor]:
         decay_u = self.tau_u_trainer.get_decay()
@@ -260,7 +295,7 @@ class MCLIF2(Module):
         soma_current = currents[:, :self.num_out_neuron]
         dendritic_current = currents[:, self.num_out_neuron:].reshape(-1, self.num_out_neuron, self.num_compartments)
         # print(f"Input tensor shape: {input_tensor.shape}, Soma current shape: {soma_current.shape}, Dendritic current shape: {dendritic_current.shape}")
-        new_states, z_t = self.step(self.recurrent, decay_u, decay_d, decay_t, self.s_thr, self.d_thr, self.u0, self.d0,  states, soma_current, dendritic_current)
+        new_states, z_t = self.step(decay_u, decay_d, decay_t, self.s_thr, self.d_thr, self.u0, self.d0,  states, soma_current, dendritic_current)
         return z_t, new_states
 
     # TODO: Adapt this to work with the new multi-compartmental LIF
