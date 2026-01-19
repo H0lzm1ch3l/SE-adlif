@@ -100,9 +100,16 @@ class MCLIF2(Module):
             self.dendritic_recurrent = Parameter(
                     torch.empty((self.out_features, self.num_compartments, self.num_compartments), **factory_kwargs)
                 )
+            self.register_buffer('dendritic_recurrency_mask', 1 - torch.eye(self.num_compartments))
         else:
             # registering an empty size tensor is required for the static analyser
             self.register_buffer("dendritic_recurrent", torch.empty(size=()))
+        if self.soma_to_dend_recurrence:
+            self.soma_to_dend_weight = Parameter(
+                torch.empty((self.out_features, self.num_compartments), **factory_kwargs)
+            )
+        else:
+            self.register_buffer("soma_to_dend_weight", torch.empty(size=()))
         self.tau_u_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_u_method)(
             self.out_features,
             self.dt,
@@ -140,11 +147,17 @@ class MCLIF2(Module):
                 s_cur = s_cur + cur_rec
                 
             if self.recurrent_dendrite:
-                # cur_rec_d = F.linear(p_tm1, self.dendritic_recurrent, None)
-                cur_rec_d = torch.einsum('bni,nij->bnj', p_tm1, self.dendritic_recurrent)
+                cur_rec_d = torch.einsum('bni,nij->bnj', p_tm1, self.dendritic_recurrency_mask * self.dendritic_recurrent)
                 d_cur = d_cur + cur_rec_d
+                
+            if self.soma_to_dend_recurrence:
+                s_feedback = z_tm1.unsqueeze(-1) * self.soma_to_dend_weight
+                print(f"s_feedback shape: {s_feedback.shape}, z_tm1 shape: {z_tm1.shape}, weight shape: {self.soma_to_dend_weight.shape}")
+                exit()
+            else:
+                s_feedback = 0.0
 
-            d = beta * d_tm1 + (1.0 - beta) * d_cur
+            d = beta * d_tm1 + (1.0 - beta) * (d_cur + s_feedback)
             p = SLAYER.apply(d - d_thr, self.alpha, self.c)
             
             # create a mask tensor that is the inverse of p_tm1 -> where p_tm1 is zero, the mask is one, else zero
@@ -243,6 +256,8 @@ class MCLIF2(Module):
                     self.dendritic_recurrent[i],
                     gain=1.0,
                 )
+        if self.soma_to_dend_recurrence:
+            torch.nn.init.zeros_(self.soma_to_dend_weight)
         if self.train_u_p:
             # area_from_threshold_to_infinity = 1 - torch.distributions.uniform.Uniform(0, 1).cdf(self.s_thr)
             # bound_p = self.u_p_gain * 3/(self.num_compartments*area_from_threshold_to_infinity) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
