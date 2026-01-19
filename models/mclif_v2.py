@@ -151,7 +151,7 @@ class MCLIF2(Module):
             p_mask = (p_tm1 == 0).float()
             t = F.relu(gamma * t_tm1 + p_mask * p + p_tm1 * d_cur)
             p = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
-            d = p * self.u_p + d
+            d += (1-beta) * p * self.u_p
             
             # if the active dendrite is 0 but p_tm1 was 1, we want to reset the dendritic potential to d_rest
             inactive_reset_mask = (p == 0).float() * (p_tm1 == 1).float()
