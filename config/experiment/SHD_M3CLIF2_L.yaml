@@ -19,13 +19,12 @@ l1:
 # input size of preprocessed SHD
   input_size: 140
   # number of neurons
-  n_neurons: 220
-  # ff_gain: 0.9
+  n_neurons: 190
   # Range of tau_u
   tau_u_range: [5, 25]
   tau_d_range: [1, 20]
-  tau_t_range: [10, 60]
-  num_compartments: 2
+  tau_t_range: [1, 60]
+  num_compartments: 3
   epsilon: 0.2
   train_u_p: True
   u_p: 0.6
@@ -36,24 +35,24 @@ l1:
 l2:
   # Which cell to use
   cell: mclif_v2
-  input_size: 220
+  input_size: 190
   # number of neurons
-  n_neurons: 310
-  # ff_gain: 0.8
+  n_neurons: 280
   # Range of tau_u
   tau_u_range: [5, 25]
   tau_d_range: [1, 20]
-  tau_t_range: [10, 60]
-  num_compartments: 2
+  tau_t_range: [1, 60]
+  num_compartments: 3
   epsilon: 0.2
   train_u_p: True
   u_p: 0.6
+  # input size
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
 
 l_out:
-  input_size: 310
+  input_size: 280
   n_neurons: ${dataset.num_classes}
   # Time constant of output layer 
   tau_u_range: [15, 15]
