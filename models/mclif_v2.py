@@ -90,7 +90,7 @@ class MCLIF2(Module):
         self.bias = Parameter(torch.empty(self.out_features * self.num_compartments, **factory_kwargs))
         if self.use_recurrent:
             self.recurrent = Parameter(
-                    torch.empty((self.out_features * self.num_compartments, self.out_features), **factory_kwargs)
+                    torch.empty((self.out_features, self.out_features), **factory_kwargs)
                 )
         else:
             # registering an empty size tensor is required for the static analyser
@@ -139,7 +139,6 @@ class MCLIF2(Module):
             
             if self.use_recurrent:
                 cur_rec_s = F.linear(z_tm1, self.recurrent, None)
-                cur = cur + cur_rec_s.reshape(-1, self.num_out_neuron, self.num_compartments)
             if self.recurrent_dendrite:
                 cur_rec_d = torch.einsum('bni,nji->bnj', p_tm1, self.dendritic_recurrent) # self.dendritic_recurrency_mask * self.dendritic_recurrent)
                 cur = cur + cur_rec_d
@@ -152,7 +151,7 @@ class MCLIF2(Module):
             d_plateau = active_dendrite * self.u_p
             d = d * (1 - p.detach()) + (d_rest * p.detach())
                     
-            u = alpha * u_tm1 + (1.0 - alpha) * (d.sum(-1) + d_plateau.sum(-1))
+            u = alpha * u_tm1 + (1.0 - alpha) * (cur_rec_s + d.sum(-1) + d_plateau.sum(-1))
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest * z.detach()
             
