@@ -161,16 +161,10 @@ class MCLIF2(Module):
             d = beta * d_tm1 + (1.0 - beta) * (d_cur + s_feedback)
             p = SLAYER.apply(d - d_thr, self.alpha, self.c)
             
-            # create a mask tensor that is the inverse of p_tm1 -> where p_tm1 is zero, the mask is one, else zero
-            p_mask = (p_tm1.detach() == 0).float()
-            t = gamma * t_tm1 + p_mask * p
-            p = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
-            d_plateau = p * self.u_p
-            
-            # if the active dendrite is 0 but p_tm1 was 1, we want to reset the dendritic potential to d_rest
-            inactive_reset_mask = (p == 0).float() * (p_tm1 == 1).float()
-            d = d * (1 - inactive_reset_mask.detach()) + (d_rest * inactive_reset_mask.detach())
-            # now finally we only want p to be 1 where the dendrite is active and was not deactivated this step
+            t = gamma * t_tm1 + p
+            active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
+            d_plateau = active_dendrite * self.u_p
+            d = d * (1 - p.detach()) + (d_rest * p.detach())
                     
             u = alpha * u_tm1 + (1.0 - alpha) * (s_cur + d.sum(-1) + d_plateau.sum(-1))
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
