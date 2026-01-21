@@ -39,6 +39,7 @@ class MCLIF2(Module):
         self.unroll = cfg.get('unroll', 10)
         self.use_recurrent = cfg.get('use_recurrent', True)
         self.recurrent_dendrite = cfg.get('recurrent_dendrite', False)
+        self.soma_to_dend_recurrence = cfg.get('soma_to_dend_recurrence', False)
         self.ff_gain = cfg.get('ff_gain', 1.0)
         s_thr = cfg.get('s_thr', 1.0)
         d_thr = cfg.get('d_thr', 1.0)
@@ -147,7 +148,7 @@ class MCLIF2(Module):
                 s_cur = s_cur + cur_rec
                 
             if self.recurrent_dendrite:
-                cur_rec_d = torch.einsum('bni,nij->bnj', p_tm1, self.dendritic_recurrency_mask * self.dendritic_recurrent)
+                cur_rec_d = torch.einsum('bni,nij->bnj', p_tm1, self.dendritic_recurrent) # self.dendritic_recurrency_mask * self.dendritic_recurrent)
                 d_cur = d_cur + cur_rec_d
                 
             if self.soma_to_dend_recurrence:
@@ -161,17 +162,17 @@ class MCLIF2(Module):
             p = SLAYER.apply(d - d_thr, self.alpha, self.c)
             
             # create a mask tensor that is the inverse of p_tm1 -> where p_tm1 is zero, the mask is one, else zero
-            p_mask = (p_tm1 == 0).float()
-            t = F.relu(gamma * t_tm1 + p_mask * p + p_tm1 * d_cur)
+            p_mask = (p_tm1.detach() == 0).float()
+            t = gamma * t_tm1 + p_mask * p
             p = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
-            d += (1-beta) * p * self.u_p
+            d_plateau = p * self.u_p
             
             # if the active dendrite is 0 but p_tm1 was 1, we want to reset the dendritic potential to d_rest
             inactive_reset_mask = (p == 0).float() * (p_tm1 == 1).float()
             d = d * (1 - inactive_reset_mask.detach()) + (d_rest * inactive_reset_mask.detach())
             # now finally we only want p to be 1 where the dendrite is active and was not deactivated this step
                     
-            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur + d.sum(-1))
+            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur + d.sum(-1) + d_plateau.sum(-1))
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest * z.detach()
             

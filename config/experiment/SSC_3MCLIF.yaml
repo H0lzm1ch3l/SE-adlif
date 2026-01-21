@@ -24,8 +24,9 @@ l1:
   # tau ranges
   tau_u_range: [5, 25]
   tau_d_range: [1, 20]
-  tau_t_range: [1, 60]
+  tau_t_range: [1, 300]
   # mc params
+  train_d_thr: True
   recurrent_dendrite: True
   num_compartments: 3
   epsilon: 0.2
@@ -44,8 +45,9 @@ l2:
   # tau ranges
   tau_u_range: [5, 25]
   tau_d_range: [1, 20]
-  tau_t_range: [1, 60]
+  tau_t_range: [1, 300]
   # mc params
+  train_d_thr: True
   recurrent_dendrite: True
   num_compartments: 3
   epsilon: 0.2
@@ -65,7 +67,7 @@ l_out:
 # Batch size
 batch_size: 256
 # Number of epochs
-n_epochs: 40
+n_epochs: 1
 # Loss aggregation
 loss_agg: mean_membrane_potentials
 
