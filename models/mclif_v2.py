@@ -39,7 +39,6 @@ class MCLIF2(Module):
         self.unroll = cfg.get('unroll', 10)
         self.use_recurrent = cfg.get('use_recurrent', True)
         self.recurrent_dendrite = cfg.get('recurrent_dendrite', False)
-        self.soma_to_dend_recurrence = cfg.get('soma_to_dend_recurrence', False)
         self.ff_gain = cfg.get('ff_gain', 1.0)
         s_thr = cfg.get('s_thr', 1.0)
         d_thr = cfg.get('d_thr', 1.0)
@@ -86,9 +85,9 @@ class MCLIF2(Module):
             self.u_p = u_p
 
         self.weight = Parameter(
-            torch.empty((self.out_features + self.out_features * self.num_compartments, self.in_features), **factory_kwargs)
+            torch.empty((self.out_features * self.num_compartments, self.in_features), **factory_kwargs)
         )
-        self.bias = Parameter(torch.empty(self.out_features + self.out_features * self.num_compartments, **factory_kwargs))
+        self.bias = Parameter(torch.empty(self.out_features * self.num_compartments, **factory_kwargs))
         if self.use_recurrent:
             self.recurrent = Parameter(
                     torch.empty((self.out_features, self.out_features), **factory_kwargs)
@@ -105,12 +104,6 @@ class MCLIF2(Module):
         else:
             # registering an empty size tensor is required for the static analyser
             self.register_buffer("dendritic_recurrent", torch.empty(size=()))
-        if self.soma_to_dend_recurrence:
-            self.soma_to_dend_weight = Parameter(
-                torch.empty((self.out_features, self.num_compartments), **factory_kwargs)
-            )
-        else:
-            self.register_buffer("soma_to_dend_weight", torch.empty(size=()))
         self.tau_u_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_u_method)(
             self.out_features,
             self.dt,
@@ -138,27 +131,20 @@ class MCLIF2(Module):
         self.t0 = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs), requires_grad=False)
         
         self.reset_parameters()
-        def step_fn(alpha, beta, gamma, s_thr, d_thr, u_rest, d_rest, carry, s_cur, d_cur):
+        def step_fn(alpha, beta, gamma, s_thr, d_thr, u_rest, d_rest, carry, cur):
             u_tm1, z_tm1, d_tm1, t_tm1, p_tm1 = carry
             beta = beta.reshape(-1, self.num_compartments)
             gamma = gamma.reshape(-1, self.num_compartments)
+            cur = cur.reshape(-1, self.num_out_neuron, self.num_compartments)
             
             if self.use_recurrent:
-                cur_rec = F.linear(z_tm1, self.recurrent, None)
-                s_cur = s_cur + cur_rec
-                
+                cur_rec_s = F.linear(z_tm1, self.recurrent, None)
+                cur = cur + cur_rec_s.unsqueeze(-1)
             if self.recurrent_dendrite:
                 cur_rec_d = torch.einsum('bni,nij->bnj', p_tm1, self.dendritic_recurrent) # self.dendritic_recurrency_mask * self.dendritic_recurrent)
-                d_cur = d_cur + cur_rec_d
+                cur = cur + cur_rec_d
                 
-            if self.soma_to_dend_recurrence:
-                s_feedback = z_tm1.unsqueeze(-1) * self.soma_to_dend_weight
-                print(f"s_feedback shape: {s_feedback.shape}, z_tm1 shape: {z_tm1.shape}, weight shape: {self.soma_to_dend_weight.shape}")
-                exit()
-            else:
-                s_feedback = 0.0
-
-            d = beta * d_tm1 + (1.0 - beta) * (d_cur + s_feedback)
+            d = beta * d_tm1 + (1.0 - beta) * cur
             p = SLAYER.apply(d - d_thr, self.alpha, self.c)
             
             t = gamma * t_tm1 + p
@@ -166,7 +152,7 @@ class MCLIF2(Module):
             d_plateau = active_dendrite * self.u_p
             d = d * (1 - p.detach()) + (d_rest * p.detach())
                     
-            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur + d.sum(-1) + d_plateau.sum(-1))
+            u = alpha * u_tm1 + (1.0 - alpha) * (d.sum(-1) + d_plateau.sum(-1))
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest * z.detach()
             
@@ -182,8 +168,8 @@ class MCLIF2(Module):
                 u_rest = torch.zeros_like(u0)
             d_rest = torch.zeros_like(u0)
                 
-            def wrapped_step(carry, s_cur, d_cur):
-                return step_fn(recurrent, alpha, beta, gamma, s_thr, d_thr, u_rest, d_rest, carry, s_cur, d_cur)
+            def wrapped_step(carry, cur):
+                return step_fn(recurrent, alpha, beta, gamma, s_thr, d_thr, u_rest, d_rest, carry, cur)
 
             return generic_scan(wrapped_step, (u0, z0, d0, t0), x, self.unroll)
         
@@ -196,31 +182,13 @@ class MCLIF2(Module):
                 u_rest = torch.zeros_like(u0)
             d_rest = torch.zeros_like(u0)
 
-            def wrapped_step(carry, s_cur, d_cur):
-                return step_fn(recurrent, alpha, beta, gamma, s_thr, d_thr, u_rest, d_rest, carry, s_cur, d_cur)
+            def wrapped_step(carry, cur):
+                return step_fn(recurrent, alpha, beta, gamma, s_thr, d_thr, u_rest, d_rest, carry, cur)
 
             return generic_scan_with_states(wrapped_step, (u0, z0, d0, t0), x, self.unroll)
         
         self.wrapped_scan = wrapped_scan
         self.wrapped_scan_with_states = wrapped_scan_with_states
-        
-    def _leak_adj_init(self):
-                # custom init code
-        soma_bound = self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features)) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
-        self.weight.data[:self.num_out_neuron, :] = torch.distributions.uniform.Uniform(
-            -soma_bound,
-            soma_bound,
-        ).sample((self.in_features,)).T
-        
-        for c_idx in range(self.num_compartments):
-            start = self.num_out_neuron + c_idx * self.num_out_neuron
-            end = self.num_out_neuron + (c_idx + 1) * self.num_out_neuron
-            decay = self.tau_d_trainer.get_decay()[start - self.num_out_neuron:end - self.num_out_neuron]
-            bound = self.ff_gain * torch.sqrt(3 / torch.tensor(self.in_features)) * torch.sqrt(1 - decay)
-            self.weight.data[start:end, :] = torch.distributions.uniform.Uniform(
-                -bound,
-                bound,
-            ).sample((self.in_features,)).T
 
     def reset_parameters(self):
         self.tau_u_trainer.reset_parameters()
@@ -230,8 +198,8 @@ class MCLIF2(Module):
         # self._leak_comp_adj_init()
         # Decay + Compartment adjusted Aurora Micheli Init @https://github.com/AuroraMicheli/Weight-Initialization-SNN:
         if self.s_thr == self.d_thr:
-            decays = torch.cat((self.tau_u_trainer.get_decay(), self.tau_d_trainer.get_decay()), dim=0)
-            M = torch.cat((torch.ones(self.out_features, device=decays.device), torch.ones(self.out_features * self.num_compartments, device=decays.device) * self.num_compartments), dim=0)
+            decays = self.tau_d_trainer.get_decay()
+            M = torch.ones(self.out_features * self.num_compartments, device=decays.device) * self.num_compartments
             area_from_threshold_to_infinity = 1 - torch.distributions.normal.Normal(0, 1).cdf(self.s_thr)
             var_w_optimal = 1/(self.in_features*area_from_threshold_to_infinity * M) * torch.sqrt(1 - decays)
             self.weight.data = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((self.in_features,)).T
@@ -251,8 +219,6 @@ class MCLIF2(Module):
                     self.dendritic_recurrent[i],
                     gain=1.0,
                 )
-        if self.soma_to_dend_recurrence:
-            torch.nn.init.zeros_(self.soma_to_dend_weight)
         if self.train_u_p:
             # area_from_threshold_to_infinity = 1 - torch.distributions.uniform.Uniform(0, 1).cdf(self.s_thr)
             # bound_p = self.u_p_gain * 3/(self.num_compartments*area_from_threshold_to_infinity) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
@@ -298,14 +264,8 @@ class MCLIF2(Module):
         decay_u = self.tau_u_trainer.get_decay()
         decay_d = self.tau_d_trainer.get_decay()
         decay_t = self.tau_t_trainer.get_decay()
-        # lets say the input tensor is a concatenation of soma and dendritic inputs
-        # print(f"Input tensor shape: {input_tensor.shape}, Expected shape: ({input_tensor.shape[0]}, {self.in_features + self.in_features * self.num_compartments})")
-        currents = F.linear(input_tensor, self.weight, self.bias)
-        # one half of the inputs is used for soma the other for dendritic
-        soma_current = currents[:, :self.num_out_neuron]
-        dendritic_current = currents[:, self.num_out_neuron:].reshape(-1, self.num_out_neuron, self.num_compartments)
-        # print(f"Input tensor shape: {input_tensor.shape}, Soma current shape: {soma_current.shape}, Dendritic current shape: {dendritic_current.shape}")
-        new_states, z_t = self.step(decay_u, decay_d, decay_t, self.s_thr, self.d_thr, self.u0, self.d0,  states, soma_current, dendritic_current)
+        current = F.linear(input_tensor, self.weight, self.bias)
+        new_states, z_t = self.step(decay_u, decay_d, decay_t, self.s_thr, self.d_thr, self.u0, self.d0,  states, current)
         return z_t, new_states
 
     # TODO: Adapt this to work with the new multi-compartmental LIF
@@ -313,11 +273,9 @@ class MCLIF2(Module):
         decay_u = self.tau_u_trainer.get_decay()
         decay_d = self.tau_d_trainer.get_decay()
         decay_t = self.tau_t_trainer.get_decay()
-        currents = F.linear(inputs, self.weight, self.bias)
-        soma_current = currents[:, :self.num_out_neuron]
-        dendritic_current = currents[:, self.num_out_neuron:].reshape(-1, self.num_out_neuron, self.num_compartments)
+        current = F.linear(inputs, self.weight, self.bias)
         u, z, d, t = self.initial_state(inputs.shape[0], inputs.device)
-        out_buffer = self.wrapped_scan(u, z, d, t, soma_current, dendritic_current, self.recurrent, decay_u, decay_d, decay_t, self.s_thr, self.d_thr)
+        out_buffer = self.wrapped_scan(u, z, d, t, current, self.recurrent, decay_u, decay_d, decay_t, self.s_thr, self.d_thr)
         return out_buffer[:, :, :self.num_out_neuron]
 
     # TODO: Adapt this to work with the new multi-compartmental LIF
@@ -326,11 +284,9 @@ class MCLIF2(Module):
         decay_u = self.tau_u_trainer.get_decay()
         decay_d = self.tau_d_trainer.get_decay()
         decay_t = self.tau_t_trainer.get_decay()
-        currents = F.linear(inputs, self.weight, self.bias)
-        soma_current = currents[:, :self.num_out_neuron]
-        dendritic_current = currents[:, self.num_out_neuron:].reshape(-1, self.num_out_neuron, self.num_compartments)
+        current = F.linear(inputs, self.weight, self.bias)
         u, z, d, t = self.initial_state(inputs.shape[0], inputs.device)
-        states, out_buffer = self.wrapped_scan_with_states(u, z, d, t, soma_current, dendritic_current, self.recurrent, decay_u, decay_d, decay_t, self.s_thr, self.d_thr)
+        states, out_buffer = self.wrapped_scan_with_states(u, z, d, t, current, self.recurrent, decay_u, decay_d, decay_t, self.s_thr, self.d_thr)
         return states[..., :self.num_out_neuron], out_buffer[..., :self.num_out_neuron]
     
     # TODO: Adapt this to work with the new multi-compartmental LIF
