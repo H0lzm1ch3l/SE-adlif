@@ -98,7 +98,7 @@ class MCLIF2(Module):
         # add weights for intra neuron dendritic recurrence
         if self.recurrent_dendrite:
             self.dendritic_recurrent = Parameter(
-                    torch.empty((self.out_features, self.num_compartments, self.num_compartments), **factory_kwargs)
+                    torch.empty((self.out_features, self.num_compartments, self.num_compartments + 1), **factory_kwargs)
                 )
             self.register_buffer('dendritic_recurrency_mask', 1 - torch.eye(self.num_compartments))
         else:
@@ -141,7 +141,9 @@ class MCLIF2(Module):
                 cur_rec_s = F.linear(z_tm1, self.recurrent, None)
                 cur = cur + cur_rec_s.reshape(-1, self.num_out_neuron, self.num_compartments)
             if self.recurrent_dendrite:
-                cur_rec_d = torch.einsum('bni,nij->bnj', p_tm1, self.dendritic_recurrent) # self.dendritic_recurrency_mask * self.dendritic_recurrent)
+                # cur_rec_d = torch.einsum('bni,nij->bnj', p_tm1, self.dendritic_recurrent) # self.dendritic_recurrency_mask * self.dendritic_recurrent)
+                prev_spikes = torch.cat([z_tm1.unsqueeze(-1), p_tm1], dim=-1)  # shape: (batch, num_neurons, num_compartments + 1)
+                cur_rec_d = torch.einsum('bni,nji->bnj', prev_spikes, self.dendritic_recurrent)
                 cur = cur + cur_rec_d
                 
             d = beta * d_tm1 + (1.0 - beta) * cur
