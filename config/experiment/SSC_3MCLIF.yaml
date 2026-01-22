@@ -26,7 +26,6 @@ l1:
   tau_d_range: [1, 30]
   tau_t_range: [1, 300]
   # mc params
-  train_d_thr: True
   recurrent_dendrite: True
   num_compartments: 3
   epsilon: 0.2
@@ -47,7 +46,6 @@ l2:
   tau_d_range: [1, 30]
   tau_t_range: [1, 300]
   # mc params
-  train_d_thr: True
   recurrent_dendrite: True
   num_compartments: 3
   epsilon: 0.2
