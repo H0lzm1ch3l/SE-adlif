@@ -149,10 +149,10 @@ class MCLIF2(Module):
             
             t = gamma * t_tm1 + p
             active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
-            d_plateau = active_dendrite * self.u_p
             # d = d * (1 - p.detach()) + (d_rest * p.detach())
+            d_influx = (d + active_dendrite) * self.u_p
                     
-            u = alpha * u_tm1 + (1.0 - alpha) * (cur_rec_s + d.sum(-1) + d_plateau.sum(-1))
+            u = alpha * u_tm1 + (1.0 - alpha) * (cur_rec_s + d_influx.sum(-1))
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
             # u = u * (1 - z.detach()) + u_rest * z.detach()
             
@@ -197,14 +197,9 @@ class MCLIF2(Module):
         
         # self._leak_comp_adj_init()
         # Decay + Compartment adjusted Aurora Micheli Init @https://github.com/AuroraMicheli/Weight-Initialization-SNN:
-        if self.s_thr == self.d_thr:
-            decays = self.tau_d_trainer.get_decay()
-            # M = torch.ones(self.out_features * self.num_compartments, device=decays.device) * self.num_compartments
-            area_from_threshold_to_infinity = 1 - torch.distributions.normal.Normal(0, 1).cdf(self.s_thr)
-            var_w_optimal = 1/(self.in_features*area_from_threshold_to_infinity) * torch.sqrt(1 - decays)
-            self.weight.data = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((self.in_features,)).T
-        else:
-            raise NotImplementedError("Different thresholds for soma and dendrites not supported in Micheli init.")
+        area_from_threshold_to_infinity = 1 - torch.distributions.normal.Normal(0, 1).cdf(self.d_thr)
+        var_w_optimal = 1/(self.in_features*area_from_threshold_to_infinity) * torch.sqrt(1 - self.tau_d_trainer.get_decay())
+        self.weight.data = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((self.in_features,)).T
        
         torch.nn.init.zeros_(self.bias)
         if self.use_recurrent:
@@ -220,10 +215,11 @@ class MCLIF2(Module):
                     gain=1.0,
                 )
         if self.train_u_p:
-            # area_from_threshold_to_infinity = 1 - torch.distributions.uniform.Uniform(0, 1).cdf(self.s_thr)
-            # bound_p = self.u_p_gain * 3/(self.num_compartments*area_from_threshold_to_infinity) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
-            # self.u_p.data = torch.distributions.uniform.Uniform(0, bound_p).sample((self.num_compartments,)).T
-            torch.nn.init.zeros_(self.u_p)
+            # we assume that s_thr is 0 because u_p is a factor for the plateau potential, in case we get one within the first steps of training this would otherwise 
+            # blow up the network activity - these are dendritic weights, so normal dense weights
+            var_w_optimal = 1/(self.num_compartments) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
+            self.u_p.data = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((self.num_compartments,)).T
+            # torch.nn.init.zeros_(self.u_p)
         # h0 states 
         if self.train_u0:
             torch.nn.init.uniform_(self.u0, 0, self.s_thr[0].item())
