@@ -4,9 +4,9 @@
 # experiments=("ECG_M1CLIF" "ECG_M2CLIF" "ECG_M3CLIF" "SHD_M1CLIF" "SHD_M2CLIF" "SHD_M3CLIF" "SSC_M1CLIF" "SSC_M2CLIF" "SSC_M3CLIF" "SHD_M3CLIF2")
 # experiments=("SHD_SE_adLIF" "SHD_M3CLIF2_S, SHD_LIF_S" "SHD_M3CLIF2_L", "SSC LIF")
 experiments=("SSC_3MCLIF")
-runs=5
-gpu_count=1  # Number of available GPUs
-gpu_offset=2
+runs=10
+gpu_count=2  # Number of available GPUs
+gpu_offset=1
 
 # use commit id as name
 commit_id=$(git rev-parse --short HEAD)

@@ -53,14 +53,15 @@ class MCLIF2(Module):
             self.s_thr = Parameter(s_thr)
         else:
             self.register_buffer('s_thr', s_thr)
-        # self.s_thr = s_thr
-            
+        # self.s_thr = s_thr 
         self.alpha = cfg.get('alpha', 5.0)
         self.c = cfg.get('c', 0.4)
         self.epsilon = cfg.get('epsilon', 0.5)
-
         self.num_compartments = cfg.get('num_compartments', 1)
-        
+        # soft reset parameters, since soft reset needs to be trained these are always parameters
+        if cfg.get('use_soft_reset', True):
+            self.u_reset = Parameter(torch.zeros((self.out_features), **factory_kwargs)) #  * cfg.get('u_reset', 1.0))   
+            self.d_reset = Parameter(torch.zeros((self.out_features, self.num_compartments), **factory_kwargs)) #  * cfg.get('d_reset', 1.0))
         if isinstance(d_thr, Sequence):
             d_thr = torch.FloatTensor(self.out_features, device=device).uniform_(d_thr[0], d_thr[1])
         else:
@@ -149,12 +150,12 @@ class MCLIF2(Module):
             
             t = gamma * t_tm1 + p
             active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
-            # d = d * (1 - p.detach()) + (d_rest * p.detach())
+            d -= self.d_reset * p.detach()
             d_influx = (d + active_dendrite) * self.u_p
                     
             u = alpha * u_tm1 + (1.0 - alpha) * (cur_rec_s + d_influx.sum(-1))
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
-            # u = u * (1 - z.detach()) + u_rest * z.detach()
+            u -= self.u_reset * z.detach()
             
             return (u, z, d, t, p), z
         self.step = step_fn
