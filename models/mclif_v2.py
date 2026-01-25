@@ -3,7 +3,7 @@ import math
 from typing import Optional, Sequence
 
 import torch._dynamo.guards
-from functional.activations import SLAYER, FastSigmoid, Sigmoid
+from functional.activations import SLAYER, FastSigmoid, SUGAR_BSiLU, Sigmoid
 from models.helpers import generic_scan, generic_scan_with_states, spike_grad_injection_function
 import torch
 import torch.nn.functional as F
@@ -146,15 +146,15 @@ class MCLIF2(Module):
                 cur = cur + cur_rec_d
                 
             d = beta * d_tm1 + (1.0 - beta) * cur
-            p = SLAYER.apply(d - d_thr, self.alpha, self.c)
+            p = SUGAR_BSiLU.apply(d - d_thr)
             
             t = gamma * t_tm1 + p
-            active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
-            d -= self.d_reset * p.detach()
+            active_dendrite = SUGAR_BSiLU.apply(t - self.epsilon)
+            # d -= self.d_reset * p.detach()
             d_influx = (d + active_dendrite) * self.u_p
                     
             u = alpha * u_tm1 + (1.0 - alpha) * (cur_rec_s + d_influx.sum(-1))
-            z = SLAYER.apply(u - s_thr, self.alpha, self.c)
+            z = SUGAR_BSiLU.apply(u - s_thr)
             u -= self.u_reset * z.detach()
             
             return (u, z, d, t, p), z
