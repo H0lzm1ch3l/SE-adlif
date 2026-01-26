@@ -66,6 +66,7 @@ class MLPSNN(pl.LightningModule):
         if self.two_layers:
             s2 = self.l2.initial_state(inputs.shape[0], inputs.device)
         out_sequence = []
+        sparsity_sequences = [[], []]
         single_step_prediction_limit = int(math.ceil(inputs.shape[1] * 0.5))
 
         # Iterate over each time step in the data
@@ -77,13 +78,16 @@ class MLPSNN(pl.LightningModule):
                 x_t = out.detach()
 
             out, s1 = self.l1(x_t, s1)
+            sparsity_sequences[0].append(out)
             out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
             if self.two_layers:
                 out, s2 = self.l2(out, s2)
+                sparsity_sequences[1].append(out)
                 out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
             out, s_out = self.out_layer(out, s_out)
             out_sequence.append(out)
         
+        self.sparsity_sequences = [torch.stack(sparsity_seq, dim=1) for sparsity_seq in sparsity_sequences]
         return torch.stack(out_sequence, dim=1)
 
     def on_train_batch_end(self, outputs, batch, batch_idx: int):
@@ -212,6 +216,17 @@ class MLPSNN(pl.LightningModule):
             on_epoch=True,
             on_step=True if prefix == "train_" else False,
         )
+        
+        if hasattr(self, 'sparsity_sequences'):
+            for i, sparsity_seq in enumerate(self.sparsity_sequences):
+                sparsity = (sparsity_seq.sum() / (sparsity_seq.numel())).item()
+                self.log(
+                    f"{prefix}sparsity_layer_{i+1}",
+                    sparsity,
+                    prog_bar=True,
+                    on_epoch=True,
+                    on_step=True if prefix == "train_" else False,
+                )
 
     def training_step(self, batch, batch_idx):
         inputs, targets, block_idx = batch
