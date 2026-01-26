@@ -205,7 +205,7 @@ class MCLIF2(Module):
         self.weight.data = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((self.in_features,)).T
         
         va_w_dend_optimal = 1/(self.num_compartments*area_from_threshold_to_infinity) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
-        self.W_dend.data = torch.distributions.normal.Normal(0, torch.sqrt(va_w_dend_optimal)).sample((self.num_compartments)).T
+        self.W_dend.data = torch.distributions.normal.Normal(0, torch.sqrt(va_w_dend_optimal)).sample((self.num_compartments,)).T
        
         torch.nn.init.zeros_(self.bias)
         if self.use_recurrent:
