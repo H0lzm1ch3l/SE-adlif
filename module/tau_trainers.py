@@ -7,6 +7,8 @@ def get_tau_trainer_class(name: str):
         return InterpolationTrainer
     elif name == 'interpolationExpSigmoid':
         return InterpolationExpSigmoidTrainer
+    elif name == "sigmoid":
+        return SigmoidTrainer
     elif name == "fixed":
         return FixedTau
     else:
@@ -133,4 +135,61 @@ class InterpolationExpSigmoidTrainer(TauTrainer):
 
     def reset_parameters(self):
         torch.nn.init.uniform_(self.weight, -1, 1)
+        self.weight.requires_grad = True
+
+
+class SigmoidTrainer(TauTrainer):
+    """
+    Standard PLIF implementation. 
+    Learns a decay factor beta in range (0, 1) using a raw sigmoid.
+    Effectively allows tau to range from ~0 to Infinity.
+    """
+    def __init__(
+        self,
+        in_features: int,
+        dt: float,
+        tau_min: float = None, # Ignored, kept for compatibility
+        tau_max: float = None, # Ignored, kept for compatibility
+        device=None,
+        dtype=None,
+        **kwargs,
+    ) -> None:
+        # We pass dummy values for min/max to the super class since we won't use them
+        super().__init__(in_features, dt, tau_min, tau_max, device, dtype, **kwargs)
+        
+    def apply_parameter_constraints(self):
+        # No clamping needed because Sigmoid handles the (0,1) constraint naturally
+        pass
+
+    def forward(self):
+        # Returns the Decay Factor (beta) directly
+        # Range: (0.0, 1.0)
+        return torch.sigmoid(self.weight)
+
+    def get_tau(self):
+        # Inverse calculation: tau = -dt / ln(beta)
+        # Added eps to avoid log(0) or div by zero errors
+        beta = self.forward()
+        return -self.dt / (torch.log(beta + 1e-8))
+
+    def reset_parameters(self):
+        # uniformly initialize taus in configured range
+        random_taus = (
+                torch.rand_like(self.weight) * (self.tau_max - self.tau_min) 
+                + self.tau_min
+            )
+        
+        # 1. Calculate target decay: beta = exp(-dt / tau)
+        target_beta = torch.exp(torch.tensor(-self.dt / random_taus.clone().detach()))
+        
+        # 2. Inverse Sigmoid (Logit) to find the weight w
+        # w = ln(beta / (1 - beta))
+        init_weight = torch.log(target_beta / (1.0 - target_beta))
+        
+        # 3. Apply to weights (with a tiny bit of noise to break symmetry)
+        with torch.no_grad():
+            self.weight.data = init_weight.clone().detach()
+            # Optional: Add small noise so neurons don't learn identically
+            # self.weight.add_(torch.randn_like(self.weight) * 0.01)
+        
         self.weight.requires_grad = True

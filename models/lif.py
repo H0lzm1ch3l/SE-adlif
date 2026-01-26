@@ -2,7 +2,8 @@
 from typing import Optional, Sequence
 
 import torch._dynamo.guards
-from models.helpers import generic_scan, generic_scan_with_states, spike_grad_injection_function
+from functional.activations import SLAYER, SUGAR_BSiLU
+from models.helpers import generic_scan, generic_scan_with_states, init_micheli_normal, spike_grad_injection_function
 import torch
 import torch.nn.functional as F
 from torch.nn import Module
@@ -29,7 +30,7 @@ class LIF(Module):
         self.in_features = cfg.input_size
         self.out_features = cfg.n_neurons
         self.dt = cfg.get('dt', 1.0)
-        self.tau_u_range = cfg.tau_u_range
+        self.tau_u_range = cfg.get('tau_u_range', [5.0, 25.0])
         self.train_tau = cfg.get('train_tau', 'interpolation')
         self.unroll = cfg.get('unroll', 10)
         self.use_recurrent = cfg.get('use_recurrent', True)
@@ -81,8 +82,8 @@ class LIF(Module):
                 cur 
             )
             u_thr = u - thr
-            z = spike_grad_injection_function(u_thr, self.alpha, self.c)
-            u = u * (1 - z.detach()) + u_rest*z.detach()
+            z = SLAYER.apply(u_thr, self.alpha, self.c)
+            u = u - thr * z.detach()
             return (u, z), z
         self.step = step_fn
         
@@ -116,11 +117,7 @@ class LIF(Module):
 
     def reset_parameters(self):
         self.tau_u_trainer.reset_parameters()
-        torch.nn.init.uniform_(
-            self.weight,
-            -self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
-            self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
-        )
+        init_micheli_normal(self.weight)
         torch.nn.init.zeros_(self.bias)
         if self.use_recurrent:
             torch.nn.init.orthogonal_(
@@ -146,8 +143,8 @@ class LIF(Module):
     
     def forward(self, input_tensor: Tensor, states: tuple[Tensor, Tensor]) -> tuple[Tensor, Tensor]:
         decay_u = self.tau_u_trainer.get_decay()
-        soma_current = F.linear(input_tensor, self.weight, self.bias)
-        new_states, z_t = self.step(self.recurrent, decay_u, self.thr, self.u0,  states, soma_current)
+        current = F.linear(input_tensor, self.weight, self.bias)
+        new_states, z_t = self.step(self.recurrent, decay_u, self.thr, self.u0,  states, current)
         return z_t, new_states
 
     def layer_forward(self, inputs: torch.Tensor) -> Tensor:

@@ -11,6 +11,17 @@ def spike_grad_injection_function(x: torch.Tensor, alpha: float, c: float) -> to
     # Forward Gradient Injection trick (credits to Sebastian Otte)
     return torch.heaviside(x, torch.as_tensor(0.0).type(x.dtype)).detach() + (x - x.detach()) * SLAYER(x, alpha, c).detach()
 
+# Decay adjusted Aurora Micheli Init @https://github.com/AuroraMicheli/Weight-Initialization-SNN:
+def init_micheli_normal(tensor: torch.Tensor, threshold: torch.Tensor = torch.tensor(1.0), decay: float = None):
+    with torch.no_grad():
+        area_from_threshold_to_infinity = 1 - torch.distributions.normal.Normal(0, 1).cdf(threshold)
+        var_w_optimal = 1/(tensor.shape[1]*area_from_threshold_to_infinity) 
+        if decay is None:
+            torch.nn.init.normal_(tensor, 0, torch.sqrt(var_w_optimal))
+        else:
+            var_w_optimal = var_w_optimal * torch.sqrt(1 - decay)
+            tensor.data = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((tensor.shape[1],)).T
+
 def generic_scan(
     f: Callable[[tuple[torch.Tensor, ...], torch.Tensor], tuple[tuple[torch.Tensor, ...], torch.Tensor]], # f(s_t, x) -> (s_t+1, y)
     init: tuple[torch.Tensor, ...],
