@@ -13,7 +13,7 @@ alpha: 5.0
 c: 0.4
 dt: 1.0
 # Dropout rate
-dropout: 0.15
+dropout: 0.00
 l1:
   # Which cell to use
   cell: mclif_v2
@@ -26,7 +26,7 @@ l1:
   tau_d_range: [1, 30]
   tau_t_range: [1, 300]
   # mc params
-  use_soft_reset: True
+  # use_soft_reset: True
   recurrent_dendrite: True
   num_compartments: 3
   epsilon: 0.2
@@ -47,7 +47,7 @@ l2:
   tau_d_range: [1, 30]
   tau_t_range: [1, 300]
   # mc params
-  use_soft_reset: True
+  # use_soft_reset: True
   recurrent_dendrite: True
   num_compartments: 3
   epsilon: 0.2

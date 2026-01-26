@@ -84,6 +84,8 @@ class MCLIF2(Module):
         else:
             self.register_buffer("u_p", torch.empty(size=()))
             self.u_p = u_p
+            
+        self.W_dend = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs))
 
         self.weight = Parameter(
             torch.empty((self.out_features * self.num_compartments, self.in_features), **factory_kwargs)
@@ -151,11 +153,11 @@ class MCLIF2(Module):
             t = gamma * t_tm1 + p
             active_dendrite = SUGAR_BSiLU.apply(t - self.epsilon)
             # d -= self.d_reset * p.detach()
-            d_influx = (d + active_dendrite) * self.u_p
+            d_influx = d * self.W_dend + active_dendrite * self.u_p
                     
             u = alpha * u_tm1 + (1.0 - alpha) * (cur_rec_s + d_influx.sum(-1))
             z = SUGAR_BSiLU.apply(u - s_thr)
-            u -= self.u_reset * z.detach()
+            # u -= self.u_reset * z.detach()
             
             return (u, z, d, t, p), z
         self.step = step_fn
@@ -201,6 +203,9 @@ class MCLIF2(Module):
         area_from_threshold_to_infinity = 1 - torch.distributions.normal.Normal(0, 1).cdf(self.d_thr)
         var_w_optimal = 1/(self.in_features*area_from_threshold_to_infinity) * torch.sqrt(1 - self.tau_d_trainer.get_decay())
         self.weight.data = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((self.in_features,)).T
+        
+        va_w_dend_optimal = 1/(self.num_compartments*area_from_threshold_to_infinity) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
+        self.W_dend.data = torch.distributions.normal.Normal(0, torch.sqrt(va_w_dend_optimal)).sample((self.num_compartments)).T
        
         torch.nn.init.zeros_(self.bias)
         if self.use_recurrent:
