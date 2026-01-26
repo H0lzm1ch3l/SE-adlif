@@ -4,7 +4,7 @@ from typing import Optional, Sequence
 
 import torch._dynamo.guards
 from functional.activations import SLAYER, FastSigmoid, SUGAR_BSiLU, Sigmoid
-from models.helpers import generic_scan, generic_scan_with_states, spike_grad_injection_function
+from models.helpers import generic_scan, generic_scan_with_states, init_micheli_normal, spike_grad_injection_function
 import torch
 import torch.nn.functional as F
 from torch.nn import Module
@@ -84,9 +84,7 @@ class MCLIF2(Module):
         else:
             self.register_buffer("u_p", torch.empty(size=()))
             self.u_p = u_p
-            
-        self.W_dend = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs))
-
+        
         self.weight = Parameter(
             torch.empty((self.out_features * self.num_compartments, self.in_features), **factory_kwargs)
         )
@@ -148,16 +146,16 @@ class MCLIF2(Module):
                 cur = cur + cur_rec_d
                 
             d = beta * d_tm1 + (1.0 - beta) * cur
-            p = SUGAR_BSiLU.apply(d - d_thr)
+            p = SLAYER.apply(d - d_thr, self.alpha, self.c)
             
             t = gamma * t_tm1 + p
-            active_dendrite = SUGAR_BSiLU.apply(t - self.epsilon)
-            # d -= self.d_reset * p.detach()
-            d_influx = d * self.W_dend + active_dendrite * self.u_p
+            active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
+            d_influx = d + active_dendrite * self.u_p
+            # d = d - d_thr * p.detach()
                     
             u = alpha * u_tm1 + (1.0 - alpha) * (cur_rec_s + d_influx.sum(-1))
-            z = SUGAR_BSiLU.apply(u - s_thr)
-            # u -= self.u_reset * z.detach()
+            z = SLAYER.apply(u - s_thr, self.alpha, self.c)
+            u = u - s_thr * z.detach()
             
             return (u, z, d, t, p), z
         self.step = step_fn
@@ -197,16 +195,8 @@ class MCLIF2(Module):
         self.tau_u_trainer.reset_parameters()
         self.tau_d_trainer.reset_parameters()
         self.tau_t_trainer.reset_parameters()
-        
-        # self._leak_comp_adj_init()
-        # Decay + Compartment adjusted Aurora Micheli Init @https://github.com/AuroraMicheli/Weight-Initialization-SNN:
-        area_from_threshold_to_infinity = 1 - torch.distributions.normal.Normal(0, 1).cdf(self.d_thr)
-        var_w_optimal = 1/(self.in_features*area_from_threshold_to_infinity) * torch.sqrt(1 - self.tau_d_trainer.get_decay())
-        self.weight.data = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((self.in_features,)).T
-        
-        va_w_dend_optimal = 1/(self.num_compartments*area_from_threshold_to_infinity) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
-        self.W_dend.data = torch.distributions.normal.Normal(0, torch.sqrt(va_w_dend_optimal)).sample((self.num_compartments,)).T
-       
+        init_micheli_normal(self.weight, threshold=self.d_thr, decay=self.tau_d_trainer.get_decay())
+
         torch.nn.init.zeros_(self.bias)
         if self.use_recurrent:
             torch.nn.init.orthogonal_(
@@ -221,11 +211,7 @@ class MCLIF2(Module):
                     gain=1.0,
                 )
         if self.train_u_p:
-            # we assume that s_thr is 0 because u_p is a factor for the plateau potential, in case we get one within the first steps of training this would otherwise 
-            # blow up the network activity - these are dendritic weights, so normal dense weights
-            var_w_optimal = 1/(self.num_compartments) * torch.sqrt(1 - self.tau_u_trainer.get_decay())
-            self.u_p.data = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((self.num_compartments,)).T
-            # torch.nn.init.zeros_(self.u_p)
+            init_micheli_normal(self.u_p, threshold=torch.tensor(0.0), decay=self.tau_u_trainer.get_decay())
         # h0 states 
         if self.train_u0:
             torch.nn.init.uniform_(self.u0, 0, self.s_thr[0].item())

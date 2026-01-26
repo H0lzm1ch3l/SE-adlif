@@ -180,7 +180,7 @@ class SigmoidTrainer(TauTrainer):
             )
         
         # 1. Calculate target decay: beta = exp(-dt / tau)
-        target_beta = torch.exp(torch.tensor(-self.dt / random_taus.clone().detach()))
+        target_beta = torch.exp(-torch.tensor(self.dt) / random_taus)
         
         # 2. Inverse Sigmoid (Logit) to find the weight w
         # w = ln(beta / (1 - beta))
