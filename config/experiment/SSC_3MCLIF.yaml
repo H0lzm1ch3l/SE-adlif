@@ -5,7 +5,6 @@ defaults:
 
 exp_name: SSC_3MCLIF
 
-
 # Whether to use a two-layer network
 two_layers: true
 # SLAYER parameters
@@ -32,7 +31,7 @@ l1:
   # use_soft_reset: True
   # recurrent_dendrite: True
   num_compartments: 3
-  epsilon: 0.05
+  epsilon: 0.2
   train_u_p: True
   # slayer params
   alpha: ${alpha}
@@ -55,7 +54,7 @@ l2:
   # use_soft_reset: True
   # recurrent_dendrite: True
   num_compartments: 3
-  epsilon: 0.05
+  epsilon: 0.2
   train_u_p: True
   # slayer params
   alpha: ${alpha}

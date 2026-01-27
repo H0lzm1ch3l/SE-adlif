@@ -154,8 +154,7 @@ class MCLIF2(Module):
             d = d * (1 - p.detach()) + (d_rest * p.detach())
             t = gamma * t_tm1 + (1-gamma) * p
             active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
-            dendritic_influx = (active_dendrite * self.u_p) + ((1.0 - active_dendrite) * d)
-            # d = d - d_thr * p.detach()
+            dendritic_influx = (active_dendrite * self.u_p) + d
                     
             u = alpha * u_tm1 + (1.0 - alpha) * (cur_rec_s + dendritic_influx.sum(-1))
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
@@ -218,7 +217,8 @@ class MCLIF2(Module):
                     gain=1.0,
                 )
         if self.train_u_p:
-            init_micheli_normal(self.u_p, threshold=torch.tensor(0.0), decay=self.tau_u_trainer.get_decay())
+            # init_micheli_normal(self.u_p, threshold=torch.tensor(0.0), decay=self.tau_u_trainer.get_decay())
+            torch.nn.init.zeros_(self.u_p)
         # h0 states 
         if self.train_u0:
             torch.nn.init.uniform_(self.u0, 0, self.s_thr[0].item())
