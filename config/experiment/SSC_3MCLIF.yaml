@@ -20,21 +20,20 @@ l1:
 # input size of preprocessed SSC
   input_size: 140
   # number of neurons
-  n_neurons: 520
+  n_neurons: 470
   # tau ranges
   tau_u_range: [5, 25]
   train_tau_u_method: sigmoid
   tau_d_range: [5, 20]
   train_tau_d_method: sigmoid
-  tau_t_range: [60, 120]
+  tau_t_range: [1, 60]
   train_tau_t_method: sigmoid
   # mc params
   # use_soft_reset: True
-  recurrent_dendrite: True
+  # recurrent_dendrite: True
   num_compartments: 3
-  epsilon: 0.2
+  epsilon: 0.05
   train_u_p: True
-  u_p: 0.6
   # slayer params
   alpha: ${alpha}
   c: ${c}
@@ -42,29 +41,28 @@ l1:
 l2:
   # Which cell to use
   cell: mclif_v2
-  input_size: 520
+  input_size: 470
   # number of neurons
-  n_neurons: 520
+  n_neurons: 470
   # tau ranges
   tau_u_range: [5, 25]
   train_tau_u_method: sigmoid
   tau_d_range: [5, 20]
   train_tau_d_method: sigmoid
-  tau_t_range: [60, 120]
+  tau_t_range: [1, 60]
   train_tau_t_method: sigmoid
   # mc params
   # use_soft_reset: True
-  recurrent_dendrite: True
+  # recurrent_dendrite: True
   num_compartments: 3
-  epsilon: 0.2
+  epsilon: 0.05
   train_u_p: True
-  u_p: 0.6
   # slayer params
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
 l_out:
-  input_size: 520
+  input_size: 470
   n_neurons: ${dataset.num_classes}
   # Time constant of output layer 
   tau_u_range: [15, 15]

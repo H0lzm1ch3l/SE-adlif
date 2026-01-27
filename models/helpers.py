@@ -12,10 +12,10 @@ def spike_grad_injection_function(x: torch.Tensor, alpha: float, c: float) -> to
     return torch.heaviside(x, torch.as_tensor(0.0).type(x.dtype)).detach() + (x - x.detach()) * SLAYER(x, alpha, c).detach()
 
 # Decay adjusted Aurora Micheli Init @https://github.com/AuroraMicheli/Weight-Initialization-SNN:
-def init_micheli_normal(tensor: torch.Tensor, threshold: torch.Tensor = torch.tensor(1.0), decay: float = None):
+def init_micheli_normal(tensor: torch.Tensor, threshold: torch.Tensor = torch.tensor(1.0), decay: float = None, factor: torch.Tensor = torch.tensor(1.0)):
     with torch.no_grad():
         area_from_threshold_to_infinity = 1 - torch.distributions.normal.Normal(0, 1).cdf(threshold)
-        var_w_optimal = 1/(tensor.shape[1]*area_from_threshold_to_infinity) 
+        var_w_optimal = factor * 1/(tensor.shape[1]*area_from_threshold_to_infinity)
         if decay is None:
             torch.nn.init.normal_(tensor, 0, torch.sqrt(var_w_optimal))
         else:
