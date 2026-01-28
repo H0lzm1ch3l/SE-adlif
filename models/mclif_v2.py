@@ -132,7 +132,7 @@ class MCLIF2(Module):
         self.t0 = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs), requires_grad=False)
         
         self.reset_parameters()
-        def step_fn(alpha, beta, gamma, s_thr, d_thr, u_rest, d_rest, carry, cur):
+        def step_fn(recurrent, alpha, beta, gamma, s_thr, d_thr, u_rest, d_rest, carry, cur):
             u_tm1, z_tm1, d_tm1, t_tm1, p_tm1 = carry
             beta = beta.reshape(-1, self.num_compartments)
             gamma = gamma.reshape(-1, self.num_compartments)
@@ -141,22 +141,22 @@ class MCLIF2(Module):
             d_cur = cur[:, self.num_out_neuron:].reshape(-1, self.num_out_neuron, self.num_compartments)
     
             if self.use_recurrent:
-                cur_rec_s = F.linear(z_tm1, self.recurrent, None)
-                s_cur = s_cur + cur_rec_s
+                cur_rec = F.linear(z_tm1, recurrent, None)
+                s_cur = s_cur + cur_rec
                 # cur = cur + cur_rec_s.reshape(-1, self.num_out_neuron, self.num_compartments)
                 
             if self.recurrent_dendrite:
-                cur_rec_d = torch.einsum('bni,nji->bnj', p_tm1, self.dendritic_recurrent) # self.dendritic_recurrency_mask * self.dendritic_recurrent)
-                cur = cur + cur_rec_d
+                cur_rec_d = torch.einsum('bni,nji->bnj', p_tm1, self.dendritic_recurrency_mask * self.dendritic_recurrent)
+                d_cur = d_cur + cur_rec_d
                 
             d = beta * d_tm1 + (1.0 - beta) * d_cur
             p = SLAYER.apply(d - d_thr, self.alpha, self.c)
             d = d * (1 - p.detach()) + (d_rest * p.detach())
             t = gamma * t_tm1 + (1-gamma) * p
             active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
-            dendritic_influx = (active_dendrite * self.u_p) + d
+            d = (active_dendrite * self.u_p) + d
                     
-            u = alpha * u_tm1 + (1.0 - alpha) * (cur_rec_s + dendritic_influx.sum(-1))
+            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur + d.sum(-1))
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest * z.detach()
             
@@ -260,7 +260,7 @@ class MCLIF2(Module):
         decay_d = self.tau_d_trainer.get_decay()
         decay_t = self.tau_t_trainer.get_decay()
         current = F.linear(input_tensor, self.weight, self.bias)
-        new_states, z_t = self.step(decay_u, decay_d, decay_t, self.s_thr, self.d_thr, self.u0, self.d0,  states, current)
+        new_states, z_t = self.step(self.recurrent, decay_u, decay_d, decay_t, self.s_thr, self.d_thr, self.u0, self.d0,  states, current)
         return z_t, new_states
 
     # TODO: Adapt this to work with the new multi-compartmental LIF
