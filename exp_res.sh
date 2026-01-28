@@ -4,18 +4,18 @@
 # experiments=("ECG_M1CLIF" "ECG_M2CLIF" "ECG_M3CLIF" "SHD_M1CLIF" "SHD_M2CLIF" "SHD_M3CLIF" "SSC_M1CLIF" "SSC_M2CLIF" "SSC_M3CLIF" "SHD_M3CLIF2")
 # experiments=("SHD_SE_adLIF" "SHD_M3CLIF2_S, SHD_LIF_S" "SHD_M3CLIF2_L", "SSC LIF")
 experiments=("SSC_3MCLIF")
-runs=10
-gpu_count=2  # Number of available GPUs
-gpu_offset=1
+runs=5
+gpu_count=1  # Number of available GPUs
+gpu_offset=6
 
 # use commit id as name
 commit_id=$(git rev-parse --short HEAD)
-name="${commit_id}_exp"
 
 # no recurrent command
 # exp_name=SHD_LIF_2layer_norecurrent l1.use_recurrent=False l2.use_recurrent=False l1.n_neurons=590 l2.input_size=590 l2.n_neurons=590 l_out.input_size=590
 
 for exp in "${experiments[@]}"; do
+    name="${exp}_${commit_id}"
     for ((i=1; i<=runs; i++)); do
         gpu_id=$(( (i - 1) % gpu_count + gpu_offset ))
         echo "Running $exp - Iteration $i on GPU $gpu_id"
