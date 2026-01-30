@@ -146,19 +146,21 @@ class MCLIF2(Module):
                 # cur = cur + cur_rec_s.reshape(-1, self.num_out_neuron, self.num_compartments)
                 
             if self.recurrent_dendrite:
-                cur_rec_d = torch.einsum('bni,nji->bnj', p_tm1, self.dendritic_recurrency_mask * self.dendritic_recurrent)
+                cur_rec_d = torch.einsum('bni,nji->bnj', p_tm1, self.dendritic_recurrent) # self.dendritic_recurrency_mask * self.dendritic_recurrent)
                 d_cur = d_cur + cur_rec_d
-                
+                 
             d = beta * d_tm1 + (1.0 - beta) * d_cur
-            p = SLAYER.apply(d - d_thr, self.alpha, self.c)
-            d = d - (d_thr * p.detach())
+            p = SLAYER.apply(d - d_thr, self.alpha, self.c) * (1 - p_tm1.detach())
             t = gamma * t_tm1 + (1-gamma) * p
             active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
-            d = (active_dendrite * self.u_p) + d
+            
+            # reset if p_tm1 is 1 but active dendrite is 0
+            reset_mask = p_tm1.detach() * (1 - active_dendrite)
+            d = d * (1 - reset_mask.detach()) + (d_rest * reset_mask.detach())
                     
             u = alpha * u_tm1 + (1.0 - alpha) * (s_cur + d.sum(-1))
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
-            u = u - (s_thr * z.detach())
+            u = u * (1 - z.detach()) + u_rest * z.detach()
             
             return (u, z, d, t, p), z
         self.step = step_fn
