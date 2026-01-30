@@ -158,7 +158,7 @@ class MCLIF2(Module):
             reset_mask = p_tm1.detach() * (1 - active_dendrite)
             d = d * (1 - reset_mask.detach()) + (d_rest * reset_mask.detach())
                     
-            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur + d.sum(-1))
+            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur + d.prod(-1))
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest * z.detach()
             
