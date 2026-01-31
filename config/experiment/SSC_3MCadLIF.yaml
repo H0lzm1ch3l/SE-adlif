@@ -20,7 +20,7 @@ l1:
 # input size of preprocessed SSC
   input_size: 140
   # number of neurons
-  n_neurons: 480
+  n_neurons: 470
   # tau ranges
   tau_u_range: [5, 25]
   train_tau_u_method: sigmoid
@@ -46,9 +46,9 @@ l1:
 l2:
   # Which cell to use
   cell: mcalif
-  input_size: 480
+  input_size: 470
   # number of neurons
-  n_neurons: 512
+  n_neurons: 470
   # tau ranges
   tau_u_range: [5, 25]
   train_tau_u_method: sigmoid
@@ -72,7 +72,7 @@ l2:
   c: ${c}
   dt: ${dt}
 l_out:
-  input_size: 512
+  input_size: 470
   n_neurons: ${dataset.num_classes}
   # Time constant of output layer 
   tau_u_range: [15, 15]

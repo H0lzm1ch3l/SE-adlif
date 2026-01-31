@@ -37,6 +37,7 @@ class MCAdLIF(Module):
         self.train_tau_w_method = cfg.get('train_tau_w_method', 'interpolation')
         self.train_tau_d_method = cfg.get('train_tau_d_method', 'interpolation')
         self.train_tau_t_method = cfg.get('train_tau_t_method', 'interpolation')
+        self.recurrent_dendrite = cfg.get('recurrent_dendrite', False)
         self.unroll = cfg.get('unroll', 10)
         self.use_recurrent = cfg.get('use_recurrent', True)
         self.ff_gain = cfg.get('ff_gain', 1.0)
@@ -180,7 +181,7 @@ class MCAdLIF(Module):
             u = u * (1 - z.detach()) + (u_rest * z.detach())
             
             w = (beta * w_tm1 + (1.0 - beta) * (a * u + b * z) * self.q)
-            return (u, z, w, d, t), z
+            return (u, z, w, d, t, p), z
         self.step = step_fn
         
         def wrapped_scan(u0: Parameter, z0: Tensor, w0: Parameter, d0: Parameter, t0: Parameter, x: Tensor,
@@ -285,7 +286,13 @@ class MCAdLIF(Module):
                         layout=None,
                         pin_memory=None
                         )
-        return self.u0.unsqueeze(0), w, z, d, t
+        p = torch.zeros(size=dend_size,
+                        device=device,
+                        dtype=torch.float,
+                        layout=None,
+                        pin_memory=None
+                        )
+        return self.u0.unsqueeze(0), w, z, d, t, p
 
     # TODO: Adapt this to work with the new multi-compartmental LIF
     def apply_parameter_constraints(self):
