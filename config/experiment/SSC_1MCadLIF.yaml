@@ -19,44 +19,53 @@ l1:
 # input size of preprocessed SSC
   input_size: 140
   # number of neurons
-  n_neurons: 720
-  # Range of tau_u
+  n_neurons: 540
+  # tau ranges
   tau_u_range: [5, 25]
+  train_tau_u_method: sigmoid
+  tau_d_range: [5, 20]
+  train_tau_d_method: sigmoid
+  tau_t_range: [1, 60]
+  train_tau_t_method: sigmoid
   # Range of tau_w
   tau_w_range: [60, 300]
+  train_tau_w_method: sigmoid
   # Factor for reparametrization of a and b (see paper)
   q: 120
-  alpha: ${alpha}
-  c: ${c}
-  dt: ${dt}
+  # mc params
+  # use_soft_reset: True
+  recurrent_dendrite: True
+  num_compartments: 1
+  epsilon: 0.2
+  train_u_p: True
+  # slayer params
 l2:
   # Which cell to use
   cell: mcalif
-  input_size: 360
+  input_size: 540
   # number of neurons
-  n_neurons: 512
-
-  # Range of tau_u
+  n_neurons: 640
+  # tau ranges
   tau_u_range: [5, 25]
-  tau_d_range: [1, 20]
+  train_tau_u_method: sigmoid
+  tau_d_range: [5, 20]
+  train_tau_d_method: sigmoid
   tau_t_range: [1, 60]
-  train_tau_u_method: 'interpolation'
-  train_tau_d_method: 'interpolation'
-  train_tau_t_method: 'interpolation'
+  train_tau_t_method: sigmoid
   # Range of tau_w
   tau_w_range: [60, 300]
+  train_tau_w_method: sigmoid
   # Factor for reparametrization of a and b (see paper)
   q: 120
-
+  # mc params
+  # use_soft_reset: True
+  recurrent_dendrite: True
   num_compartments: 1
   epsilon: 0.2
-  u_p: 0.5
-  # input size
-  alpha: ${alpha}
-  c: ${c}
-  dt: ${dt}
+  train_u_p: True
+  # slayer params
 l_out:
-  input_size: 512
+  input_size: 640
   n_neurons: ${dataset.num_classes}
   # Time constant of output layer 
   tau_u_range: [15, 15]

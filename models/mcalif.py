@@ -2,7 +2,8 @@
 from typing import Optional, Sequence
 
 import torch._dynamo.guards
-from models.helpers import generic_scan, generic_scan_with_states, spike_grad_injection_function
+from functional.activations import SLAYER
+from models.helpers import generic_scan, generic_scan_with_states, init_micheli_normal, spike_grad_injection_function
 import torch
 import torch.nn.functional as F
 from torch.nn import Module
@@ -61,7 +62,7 @@ class MCAdLIF(Module):
             
         self.alpha = cfg.get('alpha', 5.0)
         self.c = cfg.get('c', 0.4)
-        self.epsilon = cfg.get('epsilon', 1e-6)
+        self.epsilon = cfg.get('epsilon', 0.05)
         
         self.tau_w_range = cfg.tau_w_range
         
@@ -83,10 +84,19 @@ class MCAdLIF(Module):
         
         self.tau_d_range = cfg.tau_d_range
         self.tau_t_range = cfg.tau_t_range
-        self.u_p = cfg.get('u_p', 0.5)
+        
+        u_p = cfg.get('u_p', 0.5) / self.num_compartments # divide by num compartments to keep the total plateau potential constant
+        # maybe calculate gain from cfg u_p value
+        self.train_u_p = cfg.get('u_p_gain', True)
+        if self.train_u_p:
+            self.u_p = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs))
+            self.u_p_gain = u_p
+        else:
+            self.register_buffer("u_p", torch.empty(size=()))
+            self.u_p = u_p
 
         self.weight = Parameter(
-            torch.empty((self.out_features + self.out_features * self.num_compartments, self.in_features + self.in_features * self.num_compartments), **factory_kwargs)
+            torch.empty((self.out_features + self.out_features * self.num_compartments, self.in_features), **factory_kwargs)
         )
         self.bias = Parameter(torch.empty(self.out_features + self.out_features * self.num_compartments, **factory_kwargs))
         if self.use_recurrent:
@@ -96,6 +106,17 @@ class MCAdLIF(Module):
         else:
             # registering an empty size tensor is required for the static analyser
             self.register_buffer("recurrent", torch.empty(size=()))
+            
+        # add weights for intra neuron dendritic recurrence
+        if self.recurrent_dendrite:
+            self.dendritic_recurrent = Parameter(
+                    torch.empty((self.out_features, self.num_compartments, self.num_compartments), **factory_kwargs)
+                )
+            self.register_buffer('dendritic_recurrency_mask', 1 - torch.eye(self.num_compartments))
+        else:
+            # registering an empty size tensor is required for the static analyser
+            self.register_buffer("dendritic_recurrent", torch.empty(size=()))
+            
         self.tau_u_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_u_method)(
             self.out_features,
             self.dt,
@@ -131,23 +152,31 @@ class MCAdLIF(Module):
         self.a = Parameter(torch.empty(self.out_features, **factory_kwargs))
         self.b = Parameter(torch.empty(self.out_features, **factory_kwargs))
         
-        def step_fn(recurrent, alpha, beta, gamma, delta, s_thr, d_thr, a, b, u_rest, d_rest, carry, s_cur, d_cur):
-            u_tm1, z_tm1, w_tm1, d_tm1, t_tm1 = carry
+        def step_fn(recurrent, alpha, beta, gamma, delta, s_thr, d_thr, a, b, u_rest, d_rest, carry, cur):
+            u_tm1, z_tm1, w_tm1, d_tm1, t_tm1, p_tm1 = carry
             gamma = gamma.reshape(-1, self.num_compartments)
             delta = delta.reshape(-1, self.num_compartments)
+            
+            s_cur = cur[:, :self.num_out_neuron]
+            d_cur = cur[:, self.num_out_neuron:].reshape(-1, self.num_out_neuron, self.num_compartments)
+            
             if self.use_recurrent:
                 cur_rec = F.linear(z_tm1, recurrent, None)
                 s_cur = s_cur + cur_rec
+                
+            if self.recurrent_dendrite:
+                cur_rec_d = torch.einsum('bni,nji->bnj', p_tm1, self.dendritic_recurrency_mask * self.dendritic_recurrent)
+                d_cur = d_cur + cur_rec_d
             
-            d = delta * d_tm1 + (1.0 - delta) * (d_cur)
-            d_plateau = spike_grad_injection_function(d - d_thr, self.alpha, self.c) 
-            d = d * (1 - d_plateau.detach()) + (d_rest * d_plateau.detach())
-            t = gamma * t_tm1 + (1.0 - gamma) * d_plateau
-            # d = d * (1 - t.detach()) + (d_rest * t.detach()) 
-            plateau = torch.sigmoid(t - self.epsilon) * self.u_p + d_rest
+            d = gamma * d_tm1 + (1.0 - gamma) * (d_cur)
+            p = SLAYER.apply(d - d_thr, self.alpha, self.c)
+            d = d * (1 - p.detach()) + (d_rest * p.detach())
+            t = delta * t_tm1 + (1-delta) * p
+            active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
+            d = (active_dendrite * self.u_p) + d
 
-            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur - w_tm1)
-            z = spike_grad_injection_function(u + plateau.sum(-1) - s_thr, self.alpha, self.c)
+            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur - w_tm1 + d.sum(-1))
+            z = SLAYER.apply(u - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + (u_rest * z.detach())
             
             w = (beta * w_tm1 + (1.0 - beta) * (a * u + b * z) * self.q)
@@ -195,13 +224,23 @@ class MCAdLIF(Module):
         self.tau_d_trainer.reset_parameters()
         self.tau_t_trainer.reset_parameters()
         
-        torch.nn.init.uniform_(
-            self.weight,
-            -self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
-            self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
-        )
+        decays = torch.cat((self.tau_u_trainer.get_decay(), self.tau_d_trainer.get_decay()), dim=0)
+        M = torch.cat((torch.ones(self.out_features, device=decays.device), torch.ones(self.out_features * self.num_compartments, device=decays.device) * self.num_compartments), dim=0)
+        init_micheli_normal(self.weight, threshold=self.d_thr, decay=decays, factor=M)
         
         torch.nn.init.zeros_(self.bias)
+        
+        # intra neuron recurrence init 
+        if self.recurrent_dendrite:
+            for i in range(self.num_out_neuron):
+                torch.nn.init.orthogonal_(
+                    self.dendritic_recurrent[i],
+                    gain=1.0,
+                )
+                
+        if self.train_u_p:
+            # init_micheli_normal(self.u_p, threshold=torch.tensor(0.0), decay=self.tau_u_trainer.get_decay())
+            torch.nn.init.zeros_(self.u_p)
         
         # h0 states 
         if self.train_u0:
@@ -255,6 +294,7 @@ class MCAdLIF(Module):
         self.tau_d_trainer.apply_parameter_constraints()
         self.tau_t_trainer.apply_parameter_constraints()
         self.u0.data = self.u0 - torch.sign(self.u0)*torch.relu(torch.abs(self.u0) - self.s_thr)
+        self.d0.data = self.d0 - torch.sign(self.d0)*torch.relu(torch.abs(self.d0) - self.d_thr)
         self.s_thr.data = torch.maximum(self.s_thr, torch.zeros_like(self.s_thr))
         self.d_thr.data = torch.maximum(self.d_thr, torch.zeros_like(self.d_thr))
         self.a.data = torch.clamp(self.a, min=self.a_range[0], max=self.a_range[1])
@@ -265,14 +305,8 @@ class MCAdLIF(Module):
         decay_w = self.tau_w_trainer.get_decay()
         decay_d = self.tau_d_trainer.get_decay()
         decay_t = self.tau_t_trainer.get_decay()
-        # lets say the input tensor is a concatenation of soma and dendritic inputs
-        # print(f"Input tensor shape: {input_tensor.shape}, Expected shape: ({input_tensor.shape[0]}, {self.in_features + self.in_features * self.num_compartments})")
-        currents = F.linear(input_tensor, self.weight, self.bias)
-        # one half of the inputs is used for soma the other for dendritic
-        soma_current = currents[:, :self.num_out_neuron]
-        dendritic_current = currents[:, self.num_out_neuron:].reshape(-1, self.num_out_neuron, self.num_compartments)
-        # print(f"Input tensor shape: {input_tensor.shape}, Soma current shape: {soma_current.shape}, Dendritic current shape: {dendritic_current.shape}")
-        new_states, z_t = self.step(self.recurrent, decay_u, decay_w, decay_d, decay_t, self.s_thr, self.d_thr, self.a, self.b, self.u0, self.d0, states, soma_current, dendritic_current)
+        current = F.linear(input_tensor, self.weight, self.bias)
+        new_states, z_t = self.step(self.recurrent, decay_u, decay_w, decay_d, decay_t, self.s_thr, self.d_thr, self.a, self.b, self.u0, self.d0, states, current)
         return z_t, new_states
 
     # TODO: Adapt this to work with the new multi-compartmental LIF
