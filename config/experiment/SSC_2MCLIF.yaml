@@ -32,6 +32,7 @@ l1:
   recurrent_dendrite: True
   num_compartments: 2
   epsilon: 0.2
+  train_u_p: True
   # slayer params
   alpha: ${alpha}
   c: ${c}
@@ -53,6 +54,7 @@ l2:
   recurrent_dendrite: True
   num_compartments: 2
   epsilon: 0.2
+  train_u_p: True
   # slayer params
   alpha: ${alpha}
   c: ${c}

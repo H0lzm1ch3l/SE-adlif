@@ -30,6 +30,7 @@ l1:
   # mc params
   num_compartments: 1
   epsilon: 0.2
+  train_u_p: True
   # slayer params
   alpha: ${alpha}
   c: ${c}
@@ -50,6 +51,7 @@ l2:
   # mc params
   num_compartments: 1
   epsilon: 0.2
+  train_u_p: True
   # slayer params
   alpha: ${alpha}
   c: ${c}
