@@ -77,7 +77,7 @@ class MCLIF2(Module):
         
         u_p = cfg.get('u_p', 0.5) / self.num_compartments # divide by num compartments to keep the total plateau potential constant
         # maybe calculate gain from cfg u_p value
-        self.train_u_p = cfg.get('u_p_gain', True)
+        self.train_u_p = cfg.get('train_u_p', True)
         if self.train_u_p:
             self.u_p = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs))
             self.u_p_gain = u_p
