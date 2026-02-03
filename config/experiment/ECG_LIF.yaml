@@ -5,7 +5,7 @@ defaults:
 
 exp_name: ECG_LIF_2layer
 # Whether to use a two-layer network
-two_layers: true
+two_layers: false
 
 # Parameters of SLAYER
 alpha: 5
@@ -18,7 +18,7 @@ l1:
   # input size of ECG
   input_size: 4
   # number of neurons
-  n_neurons: 36
+  n_neurons: 62
   # Range of tau_u
   tau_u_range: [5, 25]
   train_tau_u_method: sigmoid
@@ -26,22 +26,22 @@ l1:
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
-l2:
-  # Which cell to use
-  cell: lif
-  input_size: 36
-  # number of neurons
-  n_neurons: 38
-  # range of tau_u
-  tau_u_range: [5, 25]
-  train_tau_u_method: sigmoid
+# l2:
+#   # Which cell to use
+#   cell: lif
+#   input_size: 36
+#   # number of neurons
+#   n_neurons: 38
+#   # range of tau_u
+#   tau_u_range: [5, 25]
+#   train_tau_u_method: sigmoid
 
-  # input size
-  alpha: ${alpha}
-  c: ${c}
-  dt: ${dt}
+#   # input size
+#   alpha: ${alpha}
+#   c: ${c}
+#   dt: ${dt}
 l_out:
-  input_size: 38
+  input_size: 62
   n_neurons: ${dataset.num_classes}
   # Time constant of output layer 
   tau_u_range: [3, 3]

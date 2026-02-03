@@ -66,7 +66,7 @@ class MLPSNN(pl.LightningModule):
         if self.two_layers:
             s2 = self.l2.initial_state(inputs.shape[0], inputs.device)
         out_sequence = []
-        sparsity_sequences = [[], []]
+        sparsity_sequences = [[], []] if self.two_layers else [[]]
         single_step_prediction_limit = int(math.ceil(inputs.shape[1] * 0.5))
 
         # Iterate over each time step in the data
