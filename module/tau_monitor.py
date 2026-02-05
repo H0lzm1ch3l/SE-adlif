@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 
 class TauMonitor(pl.Callback):
     def on_train_epoch_end(self, trainer, pl_module):
-        taus = ["tau_u", "tau_d", "tau_t"]
+        taus = ["tau_u", "tau_d", "tau_t", "tau_w"]
         for tau in taus:
             if hasattr(pl_module.l1, f"{tau}_trainer"):
                 tau_value = getattr(pl_module.l1, f"{tau}_trainer").get_tau().detach()
