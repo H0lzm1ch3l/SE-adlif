@@ -41,7 +41,7 @@ l2:
   c: ${c}
   dt: ${dt}
 l_out:
-  input_size: 62
+  input_size: 38
   n_neurons: ${dataset.num_classes}
   # Time constant of output layer 
   tau_u_range: [3, 3]
