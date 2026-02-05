@@ -21,11 +21,11 @@ l1:
   n_neurons: 18
   # Range of tau_u
   tau_u_range: [5, 25]
-  train_tau_u_method: sigmoid
+  # train_tau_u_method: sigmoid
   tau_d_range: [5, 20]
-  train_tau_d_method: sigmoid
+  # train_tau_d_method: sigmoid
   tau_t_range: [1, 60]
-  train_tau_t_method: sigmoid
+  # train_tau_t_method: sigmoid
   # mc params
   recurrent_dendrite: True
   num_compartments: 3
@@ -44,11 +44,11 @@ l2:
   n_neurons: 26
   # Range of tau_u
   tau_u_range: [5, 25]
-  train_tau_u_method: sigmoid
+  # train_tau_u_method: sigmoid
   tau_d_range: [5, 20]
-  train_tau_d_method: sigmoid
+  # train_tau_d_method: sigmoid
   tau_t_range: [1, 60]
-  train_tau_t_method: sigmoid
+  # train_tau_t_method: sigmoid
   # mc params
   recurrent_dendrite: True
   num_compartments: 3

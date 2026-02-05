@@ -21,14 +21,14 @@ l1:
   n_neurons: 26
   # tau ranges
   tau_u_range: [5, 25]
-  train_tau_u_method: sigmoid
+  # train_tau_u_method: sigmoid
   tau_d_range: [5, 20]
-  train_tau_d_method: sigmoid
+  # train_tau_d_method: sigmoid
   tau_t_range: [1, 60]
-  train_tau_t_method: sigmoid
+  # train_tau_t_method: sigmoid
   # Range of tau_w
   tau_w_range: [60, 300]
-  train_tau_w_method: sigmoid
+  # train_tau_w_method: sigmoid
   # Factor for reparametrization of a and b (see paper)
   q: 120
   # mc params
@@ -50,14 +50,14 @@ l2:
   n_neurons: 34
   # tau ranges
   tau_u_range: [5, 25]
-  train_tau_u_method: sigmoid
+  # train_tau_u_method: sigmoid
   tau_d_range: [5, 20]
-  train_tau_d_method: sigmoid
+  # train_tau_d_method: sigmoid
   tau_t_range: [1, 60]
-  train_tau_t_method: sigmoid
+  # train_tau_t_method: sigmoid
   # Range of tau_w
   tau_w_range: [60, 300]
-  train_tau_w_method: sigmoid
+  # train_tau_w_method: sigmoid
   # Factor for reparametrization of a and b (see paper)
   q: 120
   # mc params
