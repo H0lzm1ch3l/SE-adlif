@@ -42,7 +42,7 @@ import matplotlib.pyplot as plt
 #     print(f"  Block idx shape: {block_idx.shape}")
 #     print(f"  Event {1}: {events[1]}, Block idx {1}: {block_idx[1]}")
 
-dataset = CIFAR10DVSLDM(data_path='/raid/home/michael.siegl/projects/SE-adlif/data', ignore_first_timesteps=5)
+dataset = CIFAR10DVSLDM(data_path='/home/michael/projects/SE-adlif/data', ignore_first_timesteps=5)
 dataset.setup(None)
 
 train_dataloader = dataset.train_dataloader()
@@ -53,6 +53,5 @@ for i, batch in enumerate(train_dataloader):
     print(f"  Events shape: {events.shape}")
     print(f"  Targets shape: {targets.shape}")
     print(f"  Block idx shape: {block_idx.shape}")
-    print(f"  Event {1}: {events[1]}, Target {1}: {targets[1]}, Block idx {1}: {block_idx[1]}")
     if i >= 0:  # Just check the first batch
         break

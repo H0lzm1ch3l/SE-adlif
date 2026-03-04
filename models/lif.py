@@ -59,6 +59,7 @@ class LIF(Module):
             self.padding = cfg.get('padding', 0)
             self.conv2d = torch.nn.Conv2d(self.in_features, self.out_features, self.k, stride=self.stride, padding=self.padding, bias=True)
             # now all we need is init conv2d according to micheli normal 
+            self.num_out_neuron = self.out_features * (self.in_features - self.k + 2*self.padding) // self.stride + 1
         else:
             self.weight = Parameter(
                 torch.empty((self.out_features, self.in_features), **factory_kwargs)
@@ -126,8 +127,12 @@ class LIF(Module):
 
     def reset_parameters(self):
         self.tau_u_trainer.reset_parameters()
-        init_micheli_normal(self.weight)
-        torch.nn.init.zeros_(self.bias)
+        if self.convolutional:
+            init_micheli_normal(self.conv2d.weight)
+            torch.nn.init.zeros_(self.conv2d.bias)
+        else:
+            init_micheli_normal(self.weight)
+            torch.nn.init.zeros_(self.bias)
         if self.use_recurrent:
             torch.nn.init.orthogonal_(
                 self.recurrent,
@@ -153,7 +158,7 @@ class LIF(Module):
     def forward(self, input_tensor: Tensor, states: tuple[Tensor, Tensor]) -> tuple[Tensor, Tensor]:
         decay_u = self.tau_u_trainer.get_decay()
         if self.convolutional:
-            current = F.conv2d(input_tensor, self.weight, self.bias, stride=self.stride, padding=self.padding)
+            current = self.conv2d(input_tensor)
         else:  
             current = F.linear(input_tensor, self.weight, self.bias)
         new_states, z_t = self.step(self.recurrent, decay_u, self.thr, self.u0,  states, current)

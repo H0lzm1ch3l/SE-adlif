@@ -7,6 +7,7 @@ from tonic.datasets import CIFAR10DVS
 import torch
 from tonic.transforms import Optional, ToFrame
 from datasets.utils.pad_tensors import PadTensors
+from datasets.utils.diskcache import DiskCachedDataset
 import pytorch_lightning as pl
 from sklearn.model_selection import train_test_split
 
@@ -30,7 +31,7 @@ class CIFAR10DVSWrapper(CIFAR10DVS):
         events, target = super().__getitem__(index)
         block_idx = torch.ones((events.shape[0],), dtype=torch.int64)
         block_idx[:self.ignore_first_timesteps] = 0
-        return events, target, block_idx
+        return events, torch.tensor(target), block_idx
     
 
 class CIFAR10DVSLDM(pl.LightningDataModule):
@@ -42,15 +43,16 @@ class CIFAR10DVSLDM(pl.LightningDataModule):
         window_size: float = 129.0,
         batch_size: int = 256,
         num_workers: int = 1,
-        pad_to_min_size: int = 300,
+        pad_to_min_size: int = 10,
         num_classes: int = 10,
-        ignore_first_timesteps: int = 10,
+        ignore_first_timesteps: int = 0,
     ) -> None:
         super().__init__()
         if not os.path.isabs(data_path):
             cwd = hydra.utils.get_original_cwd()
             data_path = os.path.abspath(os.path.join(cwd, data_path))
         self.data_path = data_path
+        self.cache_path = os.path.join(self.data_path, 'cache/cifar10dvs')
         self.window_size = window_size
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -81,7 +83,7 @@ class CIFAR10DVSLDM(pl.LightningDataModule):
         if self.min_len > 0:
             def pad_to_min_len(x):
                 if x.shape[0] < self.min_len:
-                    pad = torch.zeros((self.min_len - x.shape[0], 1, x.shape[-1]))
+                    pad = torch.zeros((self.min_len - x.shape[0], *self.sensor_size[::-1]))
                     x = torch.cat((x, pad), dim=0)
                 return x
         else:
@@ -99,17 +101,20 @@ class CIFAR10DVSLDM(pl.LightningDataModule):
         pass
     
     def setup(self, stage: Optional[str] = None) -> None:
-        dataset_indices = list(range(len(CIFAR10DVSWrapper(save_to=self.data_path))))
-        dataset_targets = [CIFAR10DVSWrapper(save_to=self.data_path)[i][1] for i in dataset_indices]
-        print(f"Dataset indices: {dataset_indices.shape}")
-        exit()
+        # dataset = DiskCachedDataset(
+        #     CIFAR10DVSWrapper(save_to=self.data_path, transform=self.static_data_transform, ignore_first_timesteps=self.ignore_first_timesteps),
+        #     cache_path=os.path.join(self.cache_path, 'full_dataset'),
+        #     )
+        dataset = CIFAR10DVSWrapper(save_to=self.data_path, transform=self.static_data_transform, ignore_first_timesteps=self.ignore_first_timesteps)
+        dataset_indices = list(range(len(dataset)))
+        dataset_targets = [dataset[i][1] for i in dataset_indices]
         # do train val test split
-        train_indices, test_indices = train_test_split(dataset_indices, test_size=10000, random_state=42, stratify=dataset_targets)
-        train_indices, val_indices = train_test_split(train_indices, test_size=10000, random_state=42, stratify=[dataset_targets[i] for i in train_indices])   
-        self.data_train = torch.utils.data.Subset(CIFAR10DVSWrapper(save_to=self.data_path, transform=self.static_data_transform, ignore_first_timesteps=self.ignore_first_timesteps), train_indices)
-        self.data_val = torch.utils.data.Subset(CIFAR10DVSWrapper(save_to=self.data_path, transform=self.static_data_transform, ignore_first_timesteps=self.ignore_first_timesteps), val_indices)
-        self.data_test = torch.utils.data.Subset(CIFAR10DVSWrapper(save_to=self.data_path, transform=self.static_data_transform, ignore_first_timesteps=self.ignore_first_timesteps), test_indices)
-    
+        train_indices, test_indices = train_test_split(dataset_indices, test_size=1000, random_state=42, stratify=dataset_targets)
+        train_indices, val_indices = train_test_split(train_indices, test_size=1000, random_state=42, stratify=[dataset_targets[i] for i in train_indices])   
+        self.data_train = torch.utils.data.Subset(dataset, train_indices)
+        self.data_val = torch.utils.data.Subset(dataset, val_indices)
+        self.data_test = torch.utils.data.Subset(dataset, test_indices) 
+
     def train_dataloader(self):
         return torch.utils.data.DataLoader(
             self.data_train,
