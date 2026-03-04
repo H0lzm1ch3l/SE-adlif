@@ -17,6 +17,7 @@ dependencies = [
     "tonic==1.6",
     "seaborn>=0.13.2",
     "tensorboard>=2.20.0",
+    "aedat>=2.2.0",
 ]
 
 [[tool.uv.index]]
