@@ -217,7 +217,6 @@ class SHDLDM(pl.LightningDataModule):
 
     def prepare_data(self):
         pass
-        
 
     def setup(self, stage: Optional[str] = None) -> None:
         pass

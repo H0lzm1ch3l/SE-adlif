@@ -93,19 +93,19 @@ class CIFAR10DVSLDM(pl.LightningDataModule):
             tonic.transforms.Downsample(spatial_factor=spatial_factor, time_factor=time_factor),
             event_to_tensor,
             pad_to_min_len,
-            Flatten(),
+            # Flatten(),
         ]
         self.static_data_transform = tonic.transforms.Compose(transform_list)
 
-    def prepare_data():
+    def prepare_data(self):
         pass
     
     def setup(self, stage: Optional[str] = None) -> None:
-        # dataset = DiskCachedDataset(
-        #     CIFAR10DVSWrapper(save_to=self.data_path, transform=self.static_data_transform, ignore_first_timesteps=self.ignore_first_timesteps),
-        #     cache_path=os.path.join(self.cache_path, 'full_dataset'),
-        #     )
-        dataset = CIFAR10DVSWrapper(save_to=self.data_path, transform=self.static_data_transform, ignore_first_timesteps=self.ignore_first_timesteps)
+        dataset = DiskCachedDataset(
+                CIFAR10DVSWrapper(save_to=self.data_path, transform=self.static_data_transform, ignore_first_timesteps=self.ignore_first_timesteps),
+                cache_path=os.path.join(self.cache_path, 'full_dataset'),
+            )
+        # dataset = CIFAR10DVSWrapper(save_to=self.data_path, transform=self.static_data_transform, ignore_first_timesteps=self.ignore_first_timesteps)
         dataset_indices = list(range(len(dataset)))
         dataset_targets = [dataset[i][1] for i in dataset_indices]
         # do train val test split

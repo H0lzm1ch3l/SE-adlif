@@ -18,6 +18,8 @@ l1:
   cell: lif
   # input size of preprocessed SHD
   convolutional: True
+  width: 48
+  height: 48
   input_size: 2
   n_neurons: 32
   kernel_size: 3
@@ -34,6 +36,9 @@ l2:
   cell: lif
   # input size of preprocessed SHD
   convolutional: True
+  pooling: global_avg
+  width: 48
+  height: 48
   input_size: 32
   n_neurons: 64
   kernel_size: 3
