@@ -1,0 +1,96 @@
+# @package _global_
+
+defaults:
+  - /dataset: cifar10dvs
+
+exp_name: CIFAR_ResNet_SE_adLIF
+model_type: resnet
+
+# SLAYER parameters (used by all neuron layers)
+alpha: 5.0
+c: 0.1
+dt: 1.0
+
+# Dropout rate
+dropout: 0.15
+
+# ResNet specific configuration (smaller variant)
+resnet:
+  # Input spatial dimensions for CIFAR-10 DVS
+  input_height: 48
+  input_width: 48
+  
+  # Initial convolution layer
+  initial_conv:
+    in_channels: 2
+    out_channels: 32
+    kernel_size: 3
+    stride: 1
+    padding: 1
+    bias: true
+  
+  # Residual stages configuration
+  stages:
+    - num_blocks: 2
+      out_channels: 32
+      stride: 1
+      kernel_size: 3
+      padding: 1
+      neuron_cell: se_adlif
+    - num_blocks: 2
+      out_channels: 64
+      stride: 2
+      kernel_size: 3
+      padding: 1
+      neuron_cell: se_adlif
+    - num_blocks: 2
+      out_channels: 128
+      stride: 2
+      kernel_size: 3
+      padding: 1
+      neuron_cell: se_adlif
+  
+  # Global average pooling before output
+  global_avg_pool: true
+  
+  # Output layer
+  output_size: ${dataset.num_classes}
+
+# Neuron configuration (shared across all blocks)
+neuron_cfg:
+  cell: se_adlif
+  # Range of tau_u for adaptive LIF
+  tau_u_range: [5, 25]
+  tau_w_range: [60, 300]
+  use_recurrent: false
+  convolutional: true
+  alpha: 5.0
+  c: 0.1
+  dt: 1.0
+  # AdLIF specific parameters
+  q: 1.0
+  a_range: [0.0, 1.0]
+  b_range: [0.0, 2.0]
+
+# Output layer configuration
+l_out:
+  input_size: 128  # channels from last stage (will be set at runtime)
+  n_neurons: ${dataset.num_classes}
+  tau_u_range: [15, 15]
+  dt: 1.0
+
+# Training parameters
+n_epochs: 300
+batch_size: 256
+
+# Loss aggregation
+loss_agg: softmax
+
+# Metric tracking
+tracking_metric: val_acc
+tracking_mode: max
+
+# Optimizer parameters
+lr: 0.001
+factor: 0.9
+patience: 9999

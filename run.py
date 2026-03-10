@@ -3,7 +3,7 @@ import hydra
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import logging
-from models.pl_module import MLPSNN
+from models.pl_module import MLPSNN, SpikingResNetSNN
 import os
 
 from pytorch_lightning.strategies import SingleDeviceStrategy
@@ -21,7 +21,13 @@ def main(cfg: DictConfig):
     os.environ["HYDRA_FULL_ERROR"] = "1"
 
     datamodule = hydra.utils.instantiate(cfg.dataset)
-    model = MLPSNN(cfg)
+    
+    # Choose model architecture based on config
+    model_type = cfg.get('model_type', 'mlp')
+    if model_type == 'resnet':
+        model = SpikingResNetSNN(cfg)
+    else:
+        model = MLPSNN(cfg)
     callbacks = []
     model_ckpt_tracker: ModelCheckpoint = ModelCheckpoint(
         monitor=cfg.get('tracking_metric', "val_acc_epoch"),

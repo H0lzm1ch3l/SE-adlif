@@ -10,6 +10,7 @@ from datasets.utils.pad_tensors import PadTensors
 from datasets.utils.diskcache import DiskCachedDataset
 import pytorch_lightning as pl
 from sklearn.model_selection import train_test_split
+import torchvision.transforms.v2 as T
 
 from datasets.utils.transforms import Flatten
 
@@ -22,7 +23,7 @@ class CIFAR10DVSWrapper(CIFAR10DVS):
         transform = None,
         target_transform = None,
         transforms = None,
-        ignore_first_timesteps: int = 10,
+        ignore_first_timesteps: int = 1,
     ):
         super().__init__(save_to, transform, target_transform, transforms)
         self.ignore_first_timesteps = ignore_first_timesteps
@@ -40,7 +41,7 @@ class CIFAR10DVSLDM(pl.LightningDataModule):
         data_path: str,
         spatial_factor: float = 0.375,
         time_factor: float = 1e-3,
-        window_size: float = 129.0,
+        n_time_bins: int = 16,
         batch_size: int = 256,
         num_workers: int = 1,
         pad_to_min_size: int = 10,
@@ -53,7 +54,7 @@ class CIFAR10DVSLDM(pl.LightningDataModule):
             data_path = os.path.abspath(os.path.join(cwd, data_path))
         self.data_path = data_path
         self.cache_path = os.path.join(self.data_path, 'cache/cifar10dvs')
-        self.window_size = window_size
+        self.n_time_bins = n_time_bins
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.collate_fn = PadTensors()
@@ -76,7 +77,7 @@ class CIFAR10DVSLDM(pl.LightningDataModule):
         )
         
         _event_to_tensor = ToFrame(
-            sensor_size=self.sensor_size, time_window=self.window_size
+            sensor_size=self.sensor_size, n_time_bins=self.n_time_bins
         )
         event_to_tensor = lambda x: torch.from_numpy(_event_to_tensor(x)).float()
         
@@ -89,10 +90,26 @@ class CIFAR10DVSLDM(pl.LightningDataModule):
         else:
             def pad_to_min_len(x):
                 return x
+        
+        # Data Agumentation Transforms
+        
+            
         transform_list = [
-            tonic.transforms.Downsample(spatial_factor=spatial_factor, time_factor=time_factor),
+            # tonic.transforms.RandomCrop(
+            #     sensor_size=self.sensor_size, target_size=(48, 48)
+            # ),
+            # tonic.transforms.RandomFlipUD(sensor_size=self.sensor_size, p=0.2),
+            # tonic.transforms.RandomFlipLR(sensor_size=self.sensor_size, p=0.2),
+            tonic.transforms.UniformNoise(sensor_size=self.sensor_size, n=1000),
+            tonic.transforms.DropEventByArea(
+            sensor_size=self.sensor_size, area_ratio=0.2
+            ),
+            tonic.transforms.Downsample(spatial_factor=1.0, time_factor=time_factor),
             event_to_tensor,
             pad_to_min_len,
+            T.RandomResizedCrop(size=(48, 48), antialias=True),
+            T.RandomHorizontalFlip(p=0.5),
+            T.RandomVerticalFlip(p=0.5),
             # Flatten(),
         ]
         self.static_data_transform = tonic.transforms.Compose(transform_list)

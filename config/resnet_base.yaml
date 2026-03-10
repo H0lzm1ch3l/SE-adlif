@@ -1,0 +1,61 @@
+# Base ResNet configuration for use with Hydra
+# This defines the structure expected by the SpikingResNet class
+
+# ResNet architecture configuration
+resnet:
+  # Input spatial dimensions (adjust based on dataset)
+  input_height: 48
+  input_width: 48
+  
+  # Initial convolution layer (must match input data format)
+  initial_conv:
+    in_channels: 2
+    out_channels: 32
+    kernel_size: 3
+    stride: 1
+    padding: 1
+    bias: true
+  
+  # Residual stages - each stage has blocks with convolutional neurons
+  stages:
+    - num_blocks: 2
+      out_channels: 32
+      stride: 1
+      kernel_size: 3
+      padding: 1
+      neuron_cell: lif
+    - num_blocks: 2
+      out_channels: 64
+      stride: 2
+      kernel_size: 3
+      padding: 1
+      neuron_cell: lif
+    - num_blocks: 2
+      out_channels: 128
+      stride: 2
+      kernel_size: 3
+      padding: 1
+      neuron_cell: lif
+  
+  # Global average pooling before output layer
+  global_avg_pool: true
+  
+  # Number of output classes
+  output_size: 10
+
+# Shared neuron configuration for all blocks
+neuron_cfg:
+  cell: lif
+  tau_u_range: [5, 25]
+  use_recurrent: false
+  convolutional: true
+  alpha: 5.0
+  c: 0.1
+  dt: 1.0
+
+# Output layer configuration
+l_out:
+  input_size: 128
+  n_neurons: 10
+  tau_u_range: [15, 15]
+  dt: 1.0

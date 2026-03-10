@@ -12,6 +12,7 @@ from models.rnn import LSTMCellWrapper
 from models.mclif import MCLIF
 from models.mcalif import MCAdLIF
 from models.mclif_v2 import MCLIF2
+from models.resnet import SpikingResNet
 
 
 layer_map = {
@@ -38,7 +39,6 @@ class MLPSNN(pl.LightningModule):
         self.tracking_mode = cfg.tracking_mode
         self.batch_size = cfg.dataset.batch_size
         self.dropout = cfg.dropout
-
 
         # For learning rate scheduling (used for oscillation task)
         self.lr = cfg.lr
@@ -301,6 +301,261 @@ class MLPSNN(pl.LightningModule):
                 {
                     "acc": torchmetrics.Accuracy(
                         task="multiclass",  # type: ignore
+                        num_classes=self.output_size,
+                        average="micro",
+                        ignore_index=self.ignore_target_idx,
+                    )
+                }
+            )
+            self.loss = CrossEntropyLoss(ignore_index=self.ignore_target_idx)
+        self.train_metric = metrics.clone(prefix="train_")
+        self.val_metric = metrics.clone(prefix="val_")
+        self.test_metric = metrics.clone(prefix="test_")
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(params=self.parameters(), lr=self.lr)
+
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer=optimizer,
+            mode=self.tracking_mode,
+            factor=self.factor,
+            patience=self.patience,
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": lr_scheduler,
+                "monitor": self.tracking_metric,
+            },
+        }
+
+
+class SpikingResNetSNN(pl.LightningModule):
+    """
+    PyTorch Lightning module for Spiking ResNets with configurable neuron models.
+    Supports multiple stages of residual blocks with different depths and widths.
+    """
+    
+    def __init__(
+        self,
+        cfg: DictConfig,
+    ) -> None:
+        super().__init__()
+        self.ignore_target_idx = -1
+        self.output_size = cfg.dataset.num_classes
+        self.tracking_metric = cfg.tracking_metric
+        self.tracking_mode = cfg.tracking_mode
+        self.batch_size = cfg.dataset.batch_size
+        self.dropout = cfg.get('dropout', 0.0)
+
+        # For learning rate scheduling
+        self.lr = cfg.lr
+        self.factor = cfg.factor
+        self.patience = cfg.patience
+
+        self.auto_regression = cfg.get('auto_regression', False)
+
+        # Define the ResNet model
+        self.model = SpikingResNet(cfg)
+        
+        self.output_func = cfg.get('loss_agg', 'softmax')
+        self.init_metrics_and_loss()
+        self.save_hyperparameters()
+
+    def forward(
+        self, inputs: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Forward pass through the ResNet.
+        
+        Args:
+            inputs: (batch_size, time_steps, input_size)
+        
+        Returns:
+            outputs: (batch_size, time_steps, num_classes)
+        """
+        batch_size = inputs.shape[0]
+        device = inputs.device
+        
+        states = self.model.initial_state(batch_size, device)
+        out_sequence = []
+        single_step_prediction_limit = int(math.ceil(inputs.shape[1] * 0.5))
+
+        for t, x_t in enumerate(inputs.unbind(1)):
+            # Auto-regression for oscillator task
+            if self.auto_regression and t >= single_step_prediction_limit:
+                x_t = out.detach()
+
+            out, states = self.model(x_t, states)
+            out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
+            out_sequence.append(out)
+        
+        return torch.stack(out_sequence, dim=1)
+
+    def on_train_batch_end(self, outputs, batch, batch_idx: int):
+        self.model.apply_parameter_constraints()
+
+    def process_predictions_and_compute_losses(self, outputs, targets, block_idx):
+        """
+        Process the model output into prediction with respect to the temporal segmentation.
+        Then compute losses.
+        """
+        if self.auto_regression:
+            targets = targets[:, 1:]
+            l2_loss = (outputs - targets) ** 2
+            
+            block_outputs = torch.zeros(
+                size=(targets.shape[0], 2, outputs.shape[2]),
+                dtype=outputs.dtype,
+                device=outputs.device,
+            )
+            _block_idx = block_idx.unsqueeze(2).expand(size=(-1, -1, outputs.size(2)))
+            block_output = torch.scatter_reduce(
+                block_outputs,
+                dim=1,
+                index=_block_idx,
+                src=l2_loss,
+                reduce="mean",
+                include_self=False,
+            )
+            block_output = block_output[:, 1]
+            outputs_reduce = outputs
+            loss = block_output.mean()
+        else:
+            if self.output_func == "softmax":
+                outputs = torch.softmax(outputs, -1)
+                reduction = "sum"
+            else:
+                reduction = "mean"
+            
+            block_outputs = torch.zeros(
+                size=(targets.size(0), targets.size(1), outputs.size(2)),
+                dtype=outputs.dtype,
+                device=outputs.device,
+            )
+            block_idx = block_idx.unsqueeze(-1)
+
+            block_output = torch.scatter_reduce(
+                block_outputs,
+                dim=1,
+                index=block_idx.broadcast_to(outputs.shape),
+                src=outputs,
+                reduce=reduction,
+                include_self=False,
+            )
+
+            outputs_reduce = block_output.reshape(-1, outputs.size(-1))
+            targets_reduce = targets.flatten()
+
+            block_mask = torch.where(targets_reduce != self.ignore_target_idx)
+
+            loss = self.loss(outputs_reduce[block_mask].float(), targets_reduce[block_mask])
+        return (outputs_reduce, loss, block_idx)
+
+    def update_and_log_metrics(
+        self,
+        outputs: torch.Tensor,
+        targets: torch.Tensor,
+        loss: float,
+        metrics: torchmetrics.MetricCollection,
+        prefix: str,
+    ):
+        """Method centralizing the metrics logging mechanisms."""
+        if self.auto_regression:
+            single_step_prediction_limit = int(math.ceil(0.5 * outputs.shape[1]))
+            outputs = outputs[:, single_step_prediction_limit:].squeeze()
+            targets = targets[:, single_step_prediction_limit + 1:].squeeze()
+            outputs = outputs.reshape(-1, outputs.shape[-1])
+            targets = targets.reshape(-1, targets.shape[-1])
+        else:
+            targets = targets.flatten()
+
+        metrics(outputs, targets)
+        self.log_dict(
+            metrics,
+            prog_bar=True,
+            on_epoch=True,
+            on_step=True if prefix == "train_" else False,
+        )
+        self.log(
+            f"{prefix}loss",
+            loss,
+            prog_bar=True,
+            on_epoch=True,
+            on_step=True if prefix == "train_" else False,
+        )
+
+    def training_step(self, batch, batch_idx):
+        inputs, targets, block_idx = batch
+        outputs = self(inputs)
+        (
+            outputs_reduce,
+            loss,
+            block_idx,
+        ) = self.process_predictions_and_compute_losses(outputs, targets, block_idx)
+
+        self.update_and_log_metrics(
+            outputs_reduce,
+            targets,
+            loss,
+            self.train_metric,
+            prefix="train_",
+        )
+
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        inputs, targets, block_idx = batch
+        outputs = self(inputs)
+        (
+            outputs_reduce,
+            loss,
+            block_idx,
+        ) = self.process_predictions_and_compute_losses(outputs, targets, block_idx)
+
+        self.update_and_log_metrics(
+            outputs_reduce,
+            targets,
+            loss,
+            self.val_metric,
+            prefix="val_",
+        )
+
+        return loss
+
+    def test_step(self, batch, batch_idx):
+        inputs, targets, block_idx = batch
+        outputs = self(inputs)
+
+        (
+            outputs_reduce,
+            loss,
+            block_idx,
+        ) = self.process_predictions_and_compute_losses(outputs, targets, block_idx)
+
+        self.update_and_log_metrics(
+            outputs_reduce,
+            targets,
+            loss,
+            self.test_metric,
+            prefix="test_",
+        )
+
+        return loss
+
+    def init_metrics_and_loss(self):
+        if self.auto_regression:
+            metrics = torchmetrics.MetricCollection(
+                {
+                    "mse": torchmetrics.MeanSquaredError(),
+                }
+            )
+            self.loss = MSELoss()
+        else:
+            metrics = torchmetrics.MetricCollection(
+                {
+                    "acc": torchmetrics.Accuracy(
+                        task="multiclass",
                         num_classes=self.output_size,
                         average="micro",
                         ignore_index=self.ignore_target_idx,

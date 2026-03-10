@@ -3,8 +3,8 @@ data_path: ${datadir}
 spatial_factor: 0.375
 time_factor: 0.001
 pad_to_min_size: 10
-window_size: 125
-batch_size: 256
+n_time_bins: 16
+batch_size: 128
 num_workers: 8
 num_classes: 10
-ignore_first_timesteps: 0
+ignore_first_timesteps: 1

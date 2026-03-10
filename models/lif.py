@@ -5,6 +5,7 @@ import torch._dynamo.guards
 from functional.activations import SLAYER, SUGAR_BSiLU
 from models.helpers import generic_scan, generic_scan_with_states, init_micheli_normal, spike_grad_injection_function
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Module
 from torch import Tensor
@@ -39,11 +40,10 @@ class LIF(Module):
         self.num_out_neuron = cfg.get('num_out_neuron', self.out_features)
         self.use_u_rest = cfg.get('use_u_rest', False)
         self.train_u0 = cfg.get('train_u0', False)
-        self.pooling = cfg.get('pooling', None)
         if isinstance(thr, Sequence):
             thr = torch.FloatTensor(self.out_features, device=device).uniform_(thr[0], thr[1])
         else:
-            thr = torch.Tensor([thr,])
+            thr = torch.tensor([thr,], device=device, dtype=dtype)
         if cfg.get('train_thr', False):
             self.thr = Parameter(thr)
         else:
@@ -54,37 +54,26 @@ class LIF(Module):
         
         self.convolutional = cfg.get('convolutional', False)
         
-        if self.convolutional:
-            self.width = cfg.get('width', 48)
-            self.height = cfg.get('height', 48)
-            self.k = cfg.get('kernel_size', 3)
-            self.stride = cfg.get('stride', 1)
-            self.padding = cfg.get('padding', 0)
-            self.conv2d = torch.nn.Conv2d(self.in_features, self.out_features, self.k, stride=self.stride, padding=self.padding, bias=True)
-            # now all we need is init conv2d according to micheli normal 
-            self.num_out_neuron = self.width * self.height * self.out_features
-            if self.pooling:
-                self.pooling_layer = torch.nn.AdaptiveAvgPool2d((1)) if self.pooling == 'global_avg' else torch.nn.AdaptiveMaxPool2d((1))
-        else:
+        if not self.convolutional:
             self.weight = Parameter(
                 torch.empty((self.out_features, self.in_features), **factory_kwargs)
             )
-        self.bias = Parameter(torch.empty(self.out_features, **factory_kwargs))
+            self.bias = Parameter(torch.empty(self.out_features, **factory_kwargs))
         if self.use_recurrent:
             self.recurrent = Parameter(
-                    torch.empty((self.num_out_neuron, self.num_out_neuron), **factory_kwargs)
+                    torch.empty((self.out_features, self.out_features), **factory_kwargs)
                 )
         else:
             # registering an empty size tensor is required for the static analyser
             self.register_buffer("recurrent", torch.empty(size=()))
         self.tau_u_trainer: TauTrainer = get_tau_trainer_class(self.train_tau)(
-            self.num_out_neuron,
+            self.out_features,
             self.dt,
             self.tau_u_range[0],
             self.tau_u_range[1],
             **factory_kwargs,
         )
-        self.u0 = Parameter(torch.empty(self.num_out_neuron, **factory_kwargs), requires_grad=self.train_u0)
+        self.u0 = Parameter(torch.empty(self.out_features, **factory_kwargs), requires_grad=self.train_u0)
         
         self.reset_parameters()
         def step_fn(recurrent, alpha, thr, u_rest, carry, cur):
@@ -131,27 +120,28 @@ class LIF(Module):
         self.wrapped_scan_with_states = wrapped_scan_with_states
 
     def reset_parameters(self):
-        self.tau_u_trainer.reset_parameters()
-        if self.convolutional:
-            init_micheli_normal(self.conv2d.weight)
-            torch.nn.init.zeros_(self.conv2d.bias)
-        else:
+        # For convolutional neurons, tau_u_trainer is initialized lazily
+        if self.tau_u_trainer is not None:
+            self.tau_u_trainer.reset_parameters()
+        if not self.convolutional:
             init_micheli_normal(self.weight)
             torch.nn.init.zeros_(self.bias)
+            # h0 states for non-convolutional neurons
+        if self.train_u0:
+            torch.nn.init.uniform_(self.u0, 0, self.thr[0].item())
+        else:
+            torch.nn.init.zeros_(self.u0)
+        
         if self.use_recurrent:
             torch.nn.init.orthogonal_(
                 self.recurrent,
                 gain=1.0,
             )
-        # h0 states 
-        if self.train_u0:
-            torch.nn.init.uniform_(self.u0, 0, self.thr[0].item())
-        else:
-            torch.nn.init.zeros_(self.u0)
+    
     def initial_state(
         self, batch_size: int, device: Optional[torch.device] = None
     ) -> tuple[Tensor, Tensor]:
-        size = (batch_size, self.num_out_neuron)
+        size = (batch_size, self.out_features)
         z = torch.zeros(size=size, 
                         device=device, 
                         dtype=torch.float,
@@ -161,20 +151,13 @@ class LIF(Module):
         return self.u0.unsqueeze(0), z
     
     def forward(self, input_tensor: Tensor, states: tuple[Tensor, Tensor]) -> tuple[Tensor, Tensor]:
-        decay_u = self.tau_u_trainer.get_decay()
-        if self.convolutional:
-            current = self.conv2d(input_tensor)
-            shape = current.shape
-        else:  
+        current = input_tensor
+        if not self.convolutional:  
             current = F.linear(input_tensor, self.weight, self.bias)
+        
+        decay_u = self.tau_u_trainer.get_decay()
         new_states, z_t = self.step(self.recurrent, decay_u, self.thr, self.u0,  states, current.flatten(1, -1))
 
-        if self.pooling:
-            z_t = z_t.view(shape[0], self.out_features, self.height, self.width)
-            z_t = self.pooling_layer(z_t)
-            z_t = z_t.view(shape[0], self.out_features)
-        else:
-            z_t = z_t.view(shape)
         return z_t, new_states
 
     def layer_forward(self, inputs: torch.Tensor) -> Tensor:
@@ -182,7 +165,7 @@ class LIF(Module):
         decay_u = self.tau_u_trainer.get_decay()
         u, z = self.initial_state(inputs.shape[0], inputs.device)
         out_buffer = self.wrapped_scan(u, z, current, self.recurrent, decay_u, self.thr)
-        return out_buffer[:, :, :self.num_out_neuron]
+        return out_buffer[:, :, :self.out_features]
     
     @torch.no_grad()
     def layer_forward_with_states(self, inputs: torch.Tensor) -> Tensor:
@@ -190,7 +173,7 @@ class LIF(Module):
         decay_u = self.tau_u_trainer.get_decay()
         u, z = self.initial_state(inputs.shape[0], inputs.device)
         states, out_buffer = self.wrapped_scan_with_states(u, z, current, self.recurrent, decay_u, self.thr)
-        return states[..., :self.num_out_neuron], out_buffer[..., :self.num_out_neuron]
+        return states[..., :self.out_features], out_buffer[..., :self.out_features]
     def apply_parameter_constraints(self):
         self.tau_u_trainer.apply_parameter_constraints()
         self.u0.data = self.u0 - torch.sign(self.u0)*torch.relu(torch.abs(self.u0) - self.thr)
