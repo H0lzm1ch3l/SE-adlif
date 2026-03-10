@@ -64,11 +64,11 @@ class CIFAR10DVSLDM(pl.LightningDataModule):
         self.time_factor = time_factor
         
         sensor_size = tonic.datasets.CIFAR10DVS.sensor_size
-        sensor_size = (
-            int(math.ceil(sensor_size[0] * self.spatial_factor)),
-            int(math.ceil(sensor_size[1]) * self.spatial_factor),
-            sensor_size[2],
-        )
+        # sensor_size = (
+        #     int(math.ceil(sensor_size[0] * self.spatial_factor)),
+        #     int(math.ceil(sensor_size[1]) * self.spatial_factor),
+        #     sensor_size[2],
+        # )
         self.sensor_size = sensor_size
         
         self.output_size = num_classes
@@ -100,10 +100,10 @@ class CIFAR10DVSLDM(pl.LightningDataModule):
             # ),
             # tonic.transforms.RandomFlipUD(sensor_size=self.sensor_size, p=0.2),
             # tonic.transforms.RandomFlipLR(sensor_size=self.sensor_size, p=0.2),
-            tonic.transforms.UniformNoise(sensor_size=self.sensor_size, n=1000),
-            tonic.transforms.DropEventByArea(
-            sensor_size=self.sensor_size, area_ratio=0.2
-            ),
+            # tonic.transforms.UniformNoise(sensor_size=self.sensor_size, n=1000),
+            # tonic.transforms.DropEventByArea(
+            # sensor_size=self.sensor_size, area_ratio=0.2
+            # ),
             tonic.transforms.Downsample(spatial_factor=1.0, time_factor=time_factor),
             event_to_tensor,
             pad_to_min_len,
