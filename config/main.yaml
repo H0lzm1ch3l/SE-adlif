@@ -10,7 +10,7 @@ logdir: ./results
 datadir: ./data
 cachedir: ./data/cache
 ckpt_path: null
-device: cuda:0
+device: cuda:1
 
 hydra:  
   job:
