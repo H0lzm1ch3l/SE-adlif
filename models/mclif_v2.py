@@ -199,8 +199,8 @@ class MCLIF2(Module):
         self.tau_d_trainer.reset_parameters()
         self.tau_t_trainer.reset_parameters()
         
-        # decays = torch.cat((self.tau_u_trainer.get_decay(), self.tau_d_trainer.get_decay()), dim=0)
-        decays = torch.zeros(self.out_features + self.out_features * self.num_compartments)
+        decays = torch.cat((1-self.tau_u_trainer.get_decay(), 1-self.tau_d_trainer.get_decay()), dim=0)
+        # decays = torch.zeros(self.out_features + self.out_features * self.num_compartments)
         M = torch.cat((torch.ones(self.out_features), torch.ones(self.out_features * self.num_compartments) * self.num_compartments), dim=0)
         init_micheli_normal(self.weight, threshold=self.d_thr, decay=decays, factor=M)
 

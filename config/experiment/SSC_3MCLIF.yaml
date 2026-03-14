@@ -70,7 +70,7 @@ l_out:
 # Batch size
 batch_size: 256
 # Number of epochs
-n_epochs: 40
+n_epochs: 1
 # Loss aggregation
 loss_agg: mean_membrane_potentials
 
