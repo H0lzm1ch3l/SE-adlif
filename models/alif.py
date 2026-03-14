@@ -52,8 +52,6 @@ class EFAdLIF(Module):
         self.num_out_neuron = cfg.get('num_out_neuron', self.out_features)
         self.use_u_rest = cfg.get('use_u_rest', False)
         self.train_u0 = cfg.get('train_u0', False)
-
-        self.q = cfg.q
         
         self.tau_u_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_u_method)(
                 self.out_features,
@@ -101,7 +99,7 @@ class EFAdLIF(Module):
             z = spike_grad_injection_function(u_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest*z.detach()
             w = (
-                beta * w_tm1 + (1.0 - beta) * (a * u_tm1 + b * z_tm1) * self.q
+                beta * w_tm1 + (a * u_tm1 + b * z_tm1)
                 )
 
             return (u, z, w), z
@@ -236,7 +234,7 @@ class SEAdLIF(EFAdLIF):
             z = spike_grad_injection_function(u_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest*z.detach()
             w = (
-                beta * w_tm1 + (1.0 - beta) * (a * u + b * z) * self.q
+                beta * w_tm1 + (a * u + b * z)
                 )
             return (u, z, w), z
         self.step = step_fn
