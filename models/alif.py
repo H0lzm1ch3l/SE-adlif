@@ -4,7 +4,7 @@ from torch.nn import Module
 from torch import Tensor
 from torch.nn.parameter import Parameter
 import torch.nn.functional as F
-from models.helpers import  spike_grad_injection_function, generic_scan, generic_scan_with_states
+from models.helpers import  init_micheli_normal, spike_grad_injection_function, generic_scan, generic_scan_with_states
 from module.tau_trainers import TauTrainer, get_tau_trainer_class
 from omegaconf import DictConfig
 
@@ -141,13 +141,8 @@ class EFAdLIF(Module):
         self.tau_u_trainer.reset_parameters()
         self.tau_w_trainer.reset_parameters()
         
-        
-        torch.nn.init.uniform_(
-            self.weight,
-            -self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
-            self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
-        )
-        
+        # micheli init
+        init_micheli_normal(self.weight, threshold=self.thr)
         torch.nn.init.zeros_(self.bias)
         
         # h0 states 
