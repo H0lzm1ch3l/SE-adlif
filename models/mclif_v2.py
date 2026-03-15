@@ -80,7 +80,6 @@ class MCLIF2(Module):
         self.train_u_p = cfg.get('train_u_p', True)
         if self.train_u_p:
             self.u_p = Parameter(torch.empty((self.out_features, self.num_compartments), **factory_kwargs))
-            self.u_p_gain = u_p
         else:
             self.register_buffer("u_p", torch.empty(size=()))
             self.u_p = u_p
@@ -149,14 +148,14 @@ class MCLIF2(Module):
                 cur_rec_d = torch.einsum('bni,nji->bnj', p_tm1, self.dendritic_recurrency_mask * self.dendritic_recurrent)
                 d_cur = d_cur + cur_rec_d
                 
-            d = beta * d_tm1 + d_cur
+            d = beta * d_tm1 + (1-beta) * d_cur
             p = SLAYER.apply(d - d_thr, self.alpha, self.c)
             d = d * (1 - p.detach()) + (d_rest * p.detach())
             t = gamma * t_tm1 + (1-gamma) * p
             active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
             d = (active_dendrite * self.u_p) + d
                     
-            u = alpha * u_tm1 + s_cur + d.sum(-1)
+            u = alpha * u_tm1 + (1-alpha) * (s_cur + d.sum(-1))
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest * z.detach()
             
