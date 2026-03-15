@@ -148,14 +148,14 @@ class MCLIF2(Module):
                 cur_rec_d = torch.einsum('bni,nji->bnj', p_tm1, self.dendritic_recurrent)
                 d_cur = d_cur + cur_rec_d
                 
-            d = beta * d_tm1 + (1-beta) * d_cur
+            d = beta * d_tm1 + d_cur
             p = SLAYER.apply(d - d_thr, self.alpha, self.c)
             d = d * (1 - p.detach()) + (d_rest * p.detach())
             t = gamma * t_tm1 + (1-gamma) * p
             active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
             dendritic_influx = (active_dendrite * self.u_p) + d
                     
-            u = alpha * u_tm1 + (1-alpha) * (s_cur + dendritic_influx.sum(-1))
+            u = alpha * u_tm1 + s_cur + dendritic_influx.sum(-1)
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest * z.detach()
             
