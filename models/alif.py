@@ -46,6 +46,8 @@ class EFAdLIF(Module):
         self.train_tau_w_method = cfg.get("train_tau", 'interpolation')        
         self.use_recurrent = cfg.get('use_recurrent', True)
         
+        self.q = cfg.q
+        
         self.ff_gain = cfg.get('ff_gain', 1.0)
         self.a_range =  cfg.get('a_range', [0.0, 1.0])
         self.b_range = cfg.get('b_range',[0.0, 2.0])
@@ -99,7 +101,7 @@ class EFAdLIF(Module):
             z = spike_grad_injection_function(u_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest*z.detach()
             w = (
-                beta * w_tm1 + (a * u_tm1 + b * z_tm1)
+                beta * w_tm1 + (1.0 - beta) * (a * u + b * z) * self.q
                 )
 
             return (u, z, w), z
@@ -234,7 +236,7 @@ class SEAdLIF(EFAdLIF):
             z = spike_grad_injection_function(u_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest*z.detach()
             w = (
-                beta * w_tm1 + (a * u + b * z)
+                beta * w_tm1 + (1.0 - beta) * (a * u + b * z) * self.q
                 )
             return (u, z, w), z
         self.step = step_fn
