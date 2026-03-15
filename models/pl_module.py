@@ -6,6 +6,7 @@ from torch.nn import CrossEntropyLoss, MSELoss
 from omegaconf import DictConfig
 
 from models.alif import EFAdLIF, SEAdLIF
+from models.alif2 import AdLIF2
 from models.li import LI
 from models.lif import LIF
 from models.rnn import LSTMCellWrapper
@@ -22,6 +23,7 @@ layer_map = {
     "mcalif": MCAdLIF,
     "se_adlif": SEAdLIF,
     "ef_adlif": EFAdLIF,
+    "adlif2": AdLIF2,
     'lstm': LSTMCellWrapper,
 }
 
