@@ -19,7 +19,7 @@ l1:
 # input size of preprocessed SHD
   input_size: 140
   # number of neurons
-  n_neurons: 360
+  n_neurons: 600
   # Range of tau_u
   tau_u_range: [5, 25]
   # Range of tau_w
@@ -32,9 +32,9 @@ l1:
 l2:
   # Which cell to use
   cell: adlif2
-  input_size: 360
+  input_size: 600
   # number of neurons
-  n_neurons: 360
+  n_neurons: 600
 
   # Range of tau_u
   tau_u_range: [5, 25]
@@ -48,7 +48,7 @@ l2:
   c: ${c}
   dt: ${dt}
 l_out:
-  input_size: 360
+  input_size: 600
   n_neurons: ${dataset.num_classes}
   # Time constant of output layer 
   tau_u_range: [15, 15]
