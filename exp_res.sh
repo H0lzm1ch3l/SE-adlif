@@ -11,7 +11,7 @@
 experiments=("SSC_adLIF")
 runs=10
 gpu_count=1  # Number of available GPUs
-gpu_offset=4
+gpu_offset=5
 
 # use commit id as name
 commit_id=$(git rev-parse --short HEAD)
