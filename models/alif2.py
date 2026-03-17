@@ -144,6 +144,7 @@ class AdLIF2(Module):
         
         # micheli init
         init_micheli_normal(self.weight[:self.out_features], threshold=self.thr)
+        self.weight.data[self.out_features:] = self.weight[:self.out_features].detach()
         torch.nn.init.zeros_(self.bias)
         
         # h0 states 
