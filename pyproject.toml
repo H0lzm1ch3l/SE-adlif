@@ -19,6 +19,7 @@ dependencies = [
     "tensorboard>=2.20.0",
     "aedat>=2.2.0",
     "torchvision>=0.20.1",
+    "opencv-python>=4.11.0.86",
 ]
 
 [[tool.uv.index]]

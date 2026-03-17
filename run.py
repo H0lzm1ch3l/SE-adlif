@@ -3,6 +3,8 @@ import hydra
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import logging
+
+import torch
 from models.pl_module import MLPSNN, SpikingResNetSNN
 import os
 
@@ -53,8 +55,9 @@ def main(cfg: DictConfig):
         gradient_clip_val=1.5,
         enable_progress_bar=True,
         strategy=SingleDeviceStrategy(device=cfg.device),
+        detect_anomaly=True
         )
-
+    
     trainer.fit(model, datamodule=datamodule)
     result = trainer.test(model, ckpt_path="best", datamodule=datamodule)
     logging.info(f"Final result: {result}")
