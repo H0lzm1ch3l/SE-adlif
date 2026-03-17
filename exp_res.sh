@@ -10,7 +10,7 @@
 # experiments=("SSC_SE_adLIF")
 experiments=("SSC_adLIF")
 runs=10
-gpu_count=2  # Number of available GPUs
+gpu_count=1  # Number of available GPUs
 gpu_offset=3
 
 # use commit id as name

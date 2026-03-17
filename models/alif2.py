@@ -98,9 +98,8 @@ class AdLIF2(Module):
                 cur_rec = F.linear(z_tm1, recurrent, None)
                 u_cur = u_cur + cur_rec
             
-            u = alpha * u_tm1 + (1.0 - alpha) * (
-                u_cur - w_tm1
-            )
+            u = alpha * u_tm1 + u_cur - w_tm1
+            
             u_thr = u - thr
             z = spike_grad_injection_function(u_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest*z.detach()

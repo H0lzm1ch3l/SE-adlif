@@ -55,7 +55,7 @@ def main(cfg: DictConfig):
         gradient_clip_val=1.5,
         enable_progress_bar=True,
         strategy=SingleDeviceStrategy(device=cfg.device),
-        detect_anomaly=True
+        # detect_anomaly=True
         )
     
     trainer.fit(model, datamodule=datamodule)

@@ -85,7 +85,7 @@ class SSCLDM(pl.LightningDataModule):
             event_to_tensor,
             pad_to_min_len,
             Flatten(),
-            normalize,
+            # normalize,
         ]
         self.static_data_transform = tonic.transforms.Compose(transform_list)
 
