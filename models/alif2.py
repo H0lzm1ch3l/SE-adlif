@@ -98,12 +98,12 @@ class AdLIF2(Module):
                 cur_rec = F.linear(z_tm1, recurrent, None)
                 u_cur = u_cur + cur_rec
             
-            u = alpha * u_tm1 + u_cur - w_tm1
+            u = alpha * u_tm1 + (1-alpha) * (u_cur - w_tm1)
             
             u_thr = u - thr
             z = spike_grad_injection_function(u_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest*z.detach()
-            w = beta * w_tm1 + a * u + b * z + w_cur
+            w = beta * w_tm1 + (1-beta) * (a * u + b * z + w_cur)
             return (u, z, w), z
         self.step = step_fn
         
@@ -144,7 +144,6 @@ class AdLIF2(Module):
         
         # micheli init
         init_micheli_normal(self.weight[:self.out_features], threshold=self.thr)
-        self.weight.data[self.out_features:] = self.weight[:self.out_features].detach()
         torch.nn.init.zeros_(self.bias)
         
         # h0 states 
