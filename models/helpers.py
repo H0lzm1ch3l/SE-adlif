@@ -15,11 +15,12 @@ def spike_grad_injection_function(x: torch.Tensor, alpha: float, c: float) -> to
 def init_micheli_normal(tensor: torch.Tensor, threshold: torch.Tensor = torch.tensor(1.0), decay: float = None, factor: torch.Tensor = torch.tensor(1.0)):
     with torch.no_grad():
         area_from_threshold_to_infinity = 1 - torch.distributions.normal.Normal(0, 1).cdf(threshold)
-        var_w_optimal = 1/(tensor.shape[1]*area_from_threshold_to_infinity*factor)
         if decay is None:
-            torch.nn.init.normal_(tensor, 0, torch.sqrt(var_w_optimal))
+            var_w_optimal = 1/(tensor.shape[1]*area_from_threshold_to_infinity*float(factor))
+            torch.nn.init.normal_(tensor, 0, math.sqrt(var_w_optimal))
         else:
-            var_w_optimal = var_w_optimal * torch.sqrt(1 - decay)
+            var_w_optimal = 1/(tensor.shape[1]*area_from_threshold_to_infinity*factor)
+            var_w_optimal = var_w_optimal * (1 - decay)
             tensor.data = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((tensor.shape[1],)).T
 
 def generic_scan(

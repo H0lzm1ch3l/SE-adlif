@@ -72,6 +72,12 @@ class SSCLDM(pl.LightningDataModule):
         else:
             def pad_to_min_len(x):
                 return x
+        
+        def normalize(x):
+            if x.max() > 10:
+                print(f"Warning: Normalizing input with max value {x.max()}")
+            return x / x.max() 
+        
         transform_list = [
             tonic.transforms.Downsample(
                 time_factor=self.time_factor, spatial_factor=self.spatial_factor
@@ -79,6 +85,7 @@ class SSCLDM(pl.LightningDataModule):
             event_to_tensor,
             pad_to_min_len,
             Flatten(),
+            normalize,
         ]
         self.static_data_transform = tonic.transforms.Compose(transform_list)
 

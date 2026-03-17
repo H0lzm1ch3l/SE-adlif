@@ -6,11 +6,12 @@
 # experiments=("SSC_3MCLIF" "SSC_2MCLIF" "SSC_1MCLIF")
 # experiments=("SSC_1MCadLIF") #  "SSC_2MCadLIF") #  "SSC_3MCadLIF")
 # experiments=("ECG_LIF" "ECG_1MCLIF" "ECG_2MCLIF" "ECG_3MCLIF" "ECG_1MCadLIF" "ECG_2MCadLIF" "ECG_3MCadLIF")
-experiments=("SSC_3MCLIF")
+# experiments=("SSC_3MCLIF")
 # experiments=("SSC_SE_adLIF")
+experiments=("SSC_adLIF")
 runs=10
 gpu_count=2  # Number of available GPUs
-gpu_offset=2
+gpu_offset=3
 
 # use commit id as name
 commit_id=$(git rev-parse --short HEAD)

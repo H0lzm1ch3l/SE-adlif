@@ -104,7 +104,7 @@ class AdLIF2(Module):
             u_thr = u - thr
             z = spike_grad_injection_function(u_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest*z.detach()
-            w = beta * w_tm1 + w_cur + b * z
+            w = beta * w_tm1 + a * u + b * z + w_cur
             return (u, z, w), z
         self.step = step_fn
         
