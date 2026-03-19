@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - /dataset: shd
+  - /dataset: shd_val
 
 exp_name: SHD_LIF
 # Whether to use a two-layer network
