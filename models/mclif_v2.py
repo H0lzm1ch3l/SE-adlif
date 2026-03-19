@@ -149,20 +149,19 @@ class MCLIF2(Module):
                 d_cur = d_cur + cur_rec_d
                 
             d = beta * d_tm1 + d_cur
-            # p = SLAYER.apply(d - d_thr, self.alpha, self.c)
-            p = FastSigmoid.apply(d - d_thr)
+            p = SLAYER.apply(d - d_thr, self.alpha, self.c)
+            # p = FastSigmoid.apply(d - d_thr)
             d = d * (1 - p.detach()) + (d_rest * p.detach())
             t = gamma * t_tm1 + p
-            # active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
-            active_dendrite = FastSigmoid.apply(t - self.epsilon)
+            active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
+            # active_dendrite = FastSigmoid.apply(t - self.epsilon)
             dendritic_influx = (active_dendrite * self.u_p)
                     
-            u = alpha * u_tm1 + s_cur + d.sum(-1) 
+            u = alpha * u_tm1 + (1-alpha) * s_cur + d.sum(-1) 
             
-            print(u.max(), d.sum(-1).max())
             
-            # z = SLAYER.apply(u + dendritic_influx.sum(-1) - s_thr, self.alpha, self.c)
-            z = FastSigmoid.apply(u + dendritic_influx.sum(-1) - s_thr)
+            z = SLAYER.apply(u + dendritic_influx.sum(-1) - s_thr, self.alpha, self.c)
+            # z = FastSigmoid.apply(u + dendritic_influx.sum(-1) - s_thr)
             u = u * (1 - z.detach()) + u_rest * z.detach()
             
             return (u, z, d, t, p), z
@@ -204,8 +203,8 @@ class MCLIF2(Module):
         self.tau_d_trainer.reset_parameters()
         self.tau_t_trainer.reset_parameters()
         
-        decays = torch.cat((1-self.tau_u_trainer.get_decay(), 1-self.tau_d_trainer.get_decay()), dim=0)
-        # decays = torch.zeros(self.out_features + self.out_features * self.num_compartments)
+        # decays = torch.cat((1-self.tau_u_trainer.get_decay(), 1-self.tau_d_trainer.get_decay()), dim=0)
+        decays = torch.zeros(self.out_features + self.out_features * self.num_compartments)
         M = torch.cat((torch.ones(self.out_features), torch.ones(self.out_features * self.num_compartments) * self.num_compartments), dim=0)
         init_micheli_normal(self.weight, threshold=self.d_thr, decay=decays, factor=M*0.1)
 
