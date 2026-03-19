@@ -1,16 +1,8 @@
-import math
 import os
 import cv2
-import hydra
-import tonic
-import torch
-from tonic.transforms import Optional, ToFrame
-from datasets.utils.pad_tensors import PadTensors
-from datasets.utils.diskcache import DiskCachedDataset
-import pytorch_lightning as pl
-from sklearn.model_selection import train_test_split
 import numpy as np
-from pandas import DataFrame, read_csv
+from pandas import read_csv
+from tonic.transforms import ToFrame
 
 sensor_size = (320, 320, 2)
 
@@ -18,93 +10,96 @@ data_path = "/raid/home/michael.siegl/datasets/welding-data"
 file_list = ["120cmpm.csv", "60cmpm.csv", "30cmpm.csv"]
 roi = [[1.0e7, 2.0e7], [0.65e7, 2.85e7], [1.27e8, 1.6e8]]
 
-# only save data within temporal roi to remove the long stretch of nothing happening in the videos, which is not useful for training and also takes up a lot of memory
+TIME_WINDOW_US = 50_000  # 50 ms in microseconds
 
 for i, file in enumerate(file_list):
+    class_name = file.split(".")[0]  # e.g. "120cmpm"
+    print(f"\n{'='*50}")
+    print(f"Processing {file}...")
+
+    # --- Load CSV ---
     csv_path = os.path.join(data_path, "csv", file)
     df = read_csv(csv_path, header=None, names=["x", "y", "p", "t"])
     event_data = df.to_numpy()
-    print(f"Event data shape for {file}: {event_data.shape}")
-    
-    roi_event_data = event_data[np.logical_and(event_data[:, 3] > roi[i][0], event_data[:, 3] < roi[i][1])]
-    print(f"Event data shape for {file} after applying temporal ROI: {roi_event_data.shape}")
-    
-    transformed_events = np.zeros((roi_event_data.shape[0],), dtype=[("x", "<i8"), ("y", "<i8"), ("p", "<i8"), ("t", "<i8")])
-    transformed_events["x"] = roi_event_data[:, 0]
-    transformed_events["y"] = roi_event_data[:, 1]
-    transformed_events["p"] = roi_event_data[:, 2]
-    transformed_events["t"] = roi_event_data[:, 3]
-    print(f"Transformed events shape for {file}: {transformed_events.shape}")   
-    
-    # save all events as .npy files in npy folder in a folder for their class with is the same name as the csv file but without the .csv extension
-    npy_folder = os.path.join(data_path, "npy", file.split(".")[0])
+    print(f"  Raw event count: {event_data.shape[0]:,}")
+
+    # --- Temporal ROI ---
+    mask = np.logical_and(event_data[:, 3] > roi[i][0], event_data[:, 3] < roi[i][1])
+    roi_event_data = event_data[mask]
+    print(f"  Event count after ROI: {roi_event_data.shape[0]:,}")
+
+    # --- Time-based windowing ---
+    t = roi_event_data[:, 3]
+    t_start = t[0]
+    t_end   = t[-1]
+    window_starts = np.arange(t_start, t_end, TIME_WINDOW_US)
+    n_windows = len(window_starts)
+    print(f"  Splitting into {n_windows} windows of {TIME_WINDOW_US / 1000:.1f} ms each")
+
+    # --- Output folder ---
+    npy_folder = os.path.join(data_path, "npy", class_name)
     os.makedirs(npy_folder, exist_ok=True)
-    npy_path = os.path.join(npy_folder, file.split(".")[0] + ".npy")
-    np.save(npy_path, transformed_events)
-    print(f"Saved transformed events for {file} to {npy_path}")
-    
-    # also create a video but in the codes folder "." so here, nowhere in the datafolder!
-    # save video for every file in the file list
-    _event_to_tensor = ToFrame(sensor_size=sensor_size, time_window=50000)
-    frames = _event_to_tensor(transformed_events)
-    print(f"Frames shape for {file}: {frames.shape}")   
-    video_path = file.split(".")[0] + ".avi"
-    fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    out = cv2.VideoWriter(video_path, fourcc, 20.0, (sensor_size[0], sensor_size[1]))       
-    for i in range(frames.shape[0]):
-        # Sum positive and negative event channels → shape (320, 320)
-        frame = frames[i].sum(axis=0).astype(np.float32)
 
-        frame = np.log1p(frame)  # log(1 + x) handles zeros safely
-        frame_min, frame_max = frame.min(), frame.max()
-        if frame_max > frame_min:
-            frame = (frame - frame_min) / (frame_max - frame_min) * 255.0
-        frame = frame.astype(np.uint8)
+    saved = 0
+    skipped = 0
+    for w, ws in enumerate(window_starts):
+        we = ws + TIME_WINDOW_US
 
-        # Convert single-channel to 3-channel BGR (required by VideoWriter)
-        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+        idx_start = np.searchsorted(t, ws, side="left")
+        idx_end   = np.searchsorted(t, we, side="right")
 
-        out.write(frame_bgr)
-    out.release()
-    print(f"Video saved to {video_path}")       
+        window_raw = roi_event_data[idx_start:idx_end]
 
-# csv_path = "../../datasets/welding-data/recording1.csv"
-# df = read_csv(csv_path, header=None, names=["x", "y", "p", "t"])
-# event_data = df.to_numpy()
-# print(f"Event data shape: {event_data.shape}")
+        if window_raw.shape[0] == 0:
+            skipped += 1
+            continue
 
-# # transforming the events in the numpy array into tonic compatible events, with the format (x, y, p, t) and the dtype for each entry "<i8"
-# transformed_events = np.zeros((event_data.shape[0],), dtype=[("x", "<i8"), ("y", "<i8"), ("p", "<i8"), ("t", "<i8")])
-# transformed_events["x"] = event_data[:, 0]
-# transformed_events["y"] = event_data[:, 1]
-# transformed_events["p"] = event_data[:, 2]
-# transformed_events["t"] = event_data[:, 3]
-# print(f"Transformed events shape: {transformed_events}")
-# event_data = transformed_events
+        window = np.zeros(
+            (window_raw.shape[0],),
+            dtype=[("x", "<i8"), ("y", "<i8"), ("p", "<i8"), ("t", "<i8")]
+        )
+        window["x"] = window_raw[:, 0]
+        window["y"] = window_raw[:, 1]
+        window["p"] = window_raw[:, 2]
+        window["t"] = window_raw[:, 3]
 
-# # great now we're gonna use the to frame transformer to convert the raw data into frames and visualize them
-# _event_to_tensor = ToFrame(sensor_size=sensor_size, time_window=50000)
-# frames = _event_to_tensor(event_data)
-# print(f"Frames shape: {frames.shape}")
+        npy_path = os.path.join(npy_folder, f"{class_name}_w{w:05d}.npy")
+        np.save(npy_path, window)
+        saved += 1
 
-# video_path = "welding_video.avi"
-# fourcc = cv2.VideoWriter_fourcc(*'XVID')
-# out = cv2.VideoWriter(video_path, fourcc, 20.0, (sensor_size[0], sensor_size[1]))
+    print(f"  Saved {saved} windows, skipped {skipped} empty windows → {npy_folder}")
 
-# for i in range(frames.shape[0]):
-#     # Sum positive and negative event channels → shape (320, 320)
-#     frame = frames[i].sum(axis=0).astype(np.float32)
+#     # --- Video preview (full ROI sequence, written to current working directory) ---
+#     print(f"  Generating video preview...")
 
-#     frame = np.log1p(frame)  # log(1 + x) handles zeros safely
-#     frame_min, frame_max = frame.min(), frame.max()
-#     if frame_max > frame_min:
-#         frame = (frame - frame_min) / (frame_max - frame_min) * 255.0
-#     frame = frame.astype(np.uint8)
+#     full_structured = np.zeros(
+#         (roi_event_data.shape[0],),
+#         dtype=[("x", "<i8"), ("y", "<i8"), ("p", "<i8"), ("t", "<i8")]
+#     )
+#     full_structured["x"] = roi_event_data[:, 0]
+#     full_structured["y"] = roi_event_data[:, 1]
+#     full_structured["p"] = roi_event_data[:, 2]
+#     full_structured["t"] = roi_event_data[:, 3]
 
-#     # Convert single-channel to 3-channel BGR (required by VideoWriter)
-#     frame_bgr = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+#     _event_to_tensor = ToFrame(sensor_size=sensor_size, time_window=TIME_WINDOW_US)
+#     frames = _event_to_tensor(full_structured)
+#     print(f"  Frames shape: {frames.shape}")
 
-#     out.write(frame_bgr)
+#     video_path = class_name + ".avi"
+#     fourcc = cv2.VideoWriter_fourcc(*'XVID')
+#     out = cv2.VideoWriter(video_path, fourcc, 20.0, (sensor_size[0], sensor_size[1]))
 
-# out.release()
-# print(f"Video saved to {video_path}")
+#     for f_idx in range(frames.shape[0]):
+#         frame = frames[f_idx].sum(axis=0).astype(np.float32)
+#         frame = np.log1p(frame)
+#         frame_min, frame_max = frame.min(), frame.max()
+#         if frame_max > frame_min:
+#             frame = (frame - frame_min) / (frame_max - frame_min) * 255.0
+#         frame = frame.astype(np.uint8)
+#         frame_bgr = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+#         out.write(frame_bgr)
+
+#     out.release()
+#     print(f"  Video saved to {video_path}")
+
+# print(f"\nDone.")
