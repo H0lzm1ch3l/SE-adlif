@@ -148,7 +148,7 @@ class MCLIF2(Module):
                 cur_rec_d = torch.einsum('bni,nji->bnj', d_tm1, self.dendritic_recurrency_mask * self.dendritic_recurrent)
                 d_cur = d_cur + cur_rec_d
                 
-            d = beta * d_tm1 + d_cur
+            d = beta * d_tm1 + (1-beta) * d_cur
             p = SLAYER.apply(d - d_thr, self.alpha, self.c)
             # p = FastSigmoid.apply(d - d_thr)
             d = d * (1 - p.detach()) + (d_rest * p.detach())
@@ -158,7 +158,6 @@ class MCLIF2(Module):
             dendritic_influx = (active_dendrite * self.u_p)
                     
             u = alpha * u_tm1 + (1-alpha) * s_cur + d.sum(-1) 
-            
             
             z = SLAYER.apply(u + dendritic_influx.sum(-1) - s_thr, self.alpha, self.c)
             # z = FastSigmoid.apply(u + dendritic_influx.sum(-1) - s_thr)
@@ -206,7 +205,7 @@ class MCLIF2(Module):
         # decays = torch.cat((1-self.tau_u_trainer.get_decay(), 1-self.tau_d_trainer.get_decay()), dim=0)
         decays = torch.zeros(self.out_features + self.out_features * self.num_compartments)
         M = torch.cat((torch.ones(self.out_features), torch.ones(self.out_features * self.num_compartments) * self.num_compartments), dim=0)
-        init_micheli_normal(self.weight, threshold=self.d_thr, decay=decays, factor=M*0.1)
+        init_micheli_normal(self.weight, threshold=self.d_thr, decay=decays, factor=M)
 
         torch.nn.init.zeros_(self.bias)
         if self.use_recurrent:
