@@ -157,7 +157,7 @@ class MCLIF2(Module):
             # active_dendrite = FastSigmoid.apply(t - self.epsilon)
             dendritic_influx = (active_dendrite * self.u_p)
                     
-            u = alpha * u_tm1 + (1-alpha) * s_cur + d.sum(-1) 
+            u = alpha * u_tm1 + (1-alpha) * (s_cur + d.sum(-1))
             
             z = SLAYER.apply(u + dendritic_influx.sum(-1) - s_thr, self.alpha, self.c)
             # z = FastSigmoid.apply(u + dendritic_influx.sum(-1) - s_thr)
