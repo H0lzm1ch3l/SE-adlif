@@ -22,6 +22,14 @@ def init_micheli_normal(tensor: torch.Tensor, threshold: torch.Tensor = torch.te
             var_w_optimal = 1/(tensor.shape[1]*area_from_threshold_to_infinity*factor)
             var_w_optimal = var_w_optimal * (1 - decay)
             tensor.data = torch.distributions.normal.Normal(0, torch.sqrt(var_w_optimal)).sample((tensor.shape[1],)).T
+            
+def init_simple_uniform(tensor: torch.Tensor, ff_gain: float, axis: int = -1):
+    n = tensor.shape[axis]
+    torch.nn.init.uniform_(
+        tensor,
+        -ff_gain  * torch.sqrt(1 / torch.tensor(n)),
+        ff_gain * torch.sqrt(1 / torch.tensor(n)),
+    )
 
 def generic_scan(
     f: Callable[[tuple[torch.Tensor, ...], torch.Tensor], tuple[tuple[torch.Tensor, ...], torch.Tensor]], # f(s_t, x) -> (s_t+1, y)

@@ -3,7 +3,7 @@ from typing import Optional, Sequence
 
 import torch._dynamo.guards
 from functional.activations import SLAYER, SUGAR_BSiLU
-from models.helpers import generic_scan, generic_scan_with_states, init_micheli_normal, spike_grad_injection_function
+from models.helpers import generic_scan, generic_scan_with_states, init_micheli_normal, init_simple_uniform, spike_grad_injection_function
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -124,7 +124,8 @@ class LIF(Module):
         if self.tau_u_trainer is not None:
             self.tau_u_trainer.reset_parameters()
         if not self.convolutional:
-            init_micheli_normal(self.weight)
+            # init_micheli_normal(self.weight)
+            init_simple_uniform(self.weight, self.ff_gain)
             torch.nn.init.zeros_(self.bias)
             # h0 states for non-convolutional neurons
         if self.train_u0:
