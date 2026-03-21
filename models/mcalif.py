@@ -164,19 +164,19 @@ class MCAdLIF(Module):
             if self.use_recurrent:
                 cur_rec = F.linear(z_tm1, recurrent, None)
                 s_cur = s_cur + cur_rec
-                
+                 
             if self.recurrent_dendrite:
-                cur_rec_d = torch.einsum('bni,nji->bnj', p_tm1, self.dendritic_recurrency_mask * self.dendritic_recurrent)
+                cur_rec_d = torch.einsum('bni,nji->bnj', p_tm1, self.dendritic_recurrent)
                 d_cur = d_cur + cur_rec_d
-            
+                
             d = gamma * d_tm1 + (1.0 - gamma) * (d_cur)
             p = SLAYER.apply(d - d_thr, self.alpha, self.c)
             d = d * (1 - p.detach()) + (d_rest * p.detach())
             t = delta * t_tm1 + (1-delta) * p
             active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
-            d = (active_dendrite * self.u_p) + d
+            dendritic_influx = (active_dendrite * self.u_p) + d
 
-            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur - w_tm1 + d.sum(-1))
+            u = alpha * u_tm1 + (1.0 - alpha) * (s_cur - w_tm1 + dendritic_influx.sum(-1))
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + (u_rest * z.detach())
             
@@ -225,9 +225,11 @@ class MCAdLIF(Module):
         self.tau_d_trainer.reset_parameters()
         self.tau_t_trainer.reset_parameters()
         
-        decays = torch.cat((self.tau_u_trainer.get_decay(), self.tau_d_trainer.get_decay()), dim=0)
-        M = torch.cat((torch.ones(self.out_features, device=decays.device), torch.ones(self.out_features * self.num_compartments, device=decays.device) * self.num_compartments), dim=0)
-        init_micheli_normal(self.weight, threshold=self.d_thr, decay=decays, factor=M)
+        with torch.no_grad():
+            # decays = torch.cat((1-self.tau_u_trainer.get_decay(), 1-self.tau_d_trainer.get_decay()), dim=0)
+            decays = torch.zeros(self.out_features + self.out_features * self.num_compartments)
+            M = torch.cat((torch.ones(self.out_features), torch.ones(self.out_features * self.num_compartments) * self.num_compartments), dim=0)
+            init_micheli_normal(self.weight, threshold=self.d_thr, decay=decays, factor=M)
         
         torch.nn.init.zeros_(self.bias)
         
