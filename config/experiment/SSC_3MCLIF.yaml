@@ -25,7 +25,7 @@ l1:
   train_tau_u_method: sigmoid
   tau_d_range: [2, 20]
   train_tau_d_method: sigmoid
-  tau_t_range: [30, 120]
+  tau_t_range: [1, 60]
   train_tau_t_method: sigmoid
   # mc params
   # use_soft_reset: True
@@ -48,7 +48,7 @@ l2:
   train_tau_u_method: sigmoid
   tau_d_range: [2, 20]
   train_tau_d_method: sigmoid
-  tau_t_range: [30, 120]
+  tau_t_range: [1, 60]
   train_tau_t_method: sigmoid
   # mc params
   # use_soft_reset: True
