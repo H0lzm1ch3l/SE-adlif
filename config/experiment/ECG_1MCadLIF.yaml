@@ -3,7 +3,7 @@
 defaults:
   - /dataset: ecg
 
-exp_name: ECG_MC1adLIF
+exp_name: ECG_1MCadLIF
 # Whether to use a two-layer network
 two_layers: true
 
@@ -15,24 +15,23 @@ dt: 1.0
 l1:
   # Which cell to use
   cell: mcalif
-# input size of preprocessed SHD
+  # input size of preprocessed ECG 
   input_size: 4
   # number of neurons
   n_neurons: 26
   # tau ranges
   tau_u_range: [5, 25]
-  # train_tau_u_method: sigmoid
+  train_tau_u_method: sigmoid
   tau_d_range: [5, 20]
-  # train_tau_d_method: sigmoid
+  train_tau_d_method: sigmoid
   tau_t_range: [1, 60]
-  # train_tau_t_method: sigmoid
+  train_tau_t_method: sigmoid
   # Range of tau_w
   tau_w_range: [60, 300]
-  # train_tau_w_method: sigmoid
+  train_tau_w_method: sigmoid
   # Factor for reparametrization of a and b (see paper)
   q: 120
   # mc params
-  # use_soft_reset: True
   recurrent_dendrite: True
   num_compartments: 1
   epsilon: 0.2
@@ -41,7 +40,6 @@ l1:
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
-
 l2:
   # Which cell to use
   cell: mcalif
@@ -50,18 +48,17 @@ l2:
   n_neurons: 34
   # tau ranges
   tau_u_range: [5, 25]
-  # train_tau_u_method: sigmoid
+  train_tau_u_method: sigmoid
   tau_d_range: [5, 20]
-  # train_tau_d_method: sigmoid
+  train_tau_d_method: sigmoid
   tau_t_range: [1, 60]
-  # train_tau_t_method: sigmoid
+  train_tau_t_method: sigmoid
   # Range of tau_w
   tau_w_range: [60, 300]
-  # train_tau_w_method: sigmoid
+  train_tau_w_method: sigmoid
   # Factor for reparametrization of a and b (see paper)
   q: 120
   # mc params
-  # use_soft_reset: True
   recurrent_dendrite: True
   num_compartments: 1
   epsilon: 0.2
@@ -70,7 +67,6 @@ l2:
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
-
 l_out:
   input_size: 34
   n_neurons: ${dataset.num_classes}

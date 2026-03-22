@@ -6,32 +6,32 @@
 # experiments=("SSC_3MCLIF" "SSC_2MCLIF" "SSC_1MCLIF")
 # experiments=("SSC_1MCadLIF") #  "SSC_2MCadLIF") #  "SSC_3MCadLIF")
 # experiments=("ECG_LIF" "ECG_1MCLIF" "ECG_2MCLIF" "ECG_3MCLIF" "ECG_1MCadLIF" "ECG_2MCadLIF" "ECG_3MCadLIF")
-# experiments=("SSC_3MCLIF")
-experiments=("SSC_3MCadLIF")
+# experiments=("SSC_1MCLIF")
+# experiments=("SSC_1MCadLIF")
 # experiments=("SSC_SE_adLIF")
 # experiments=("SSC_adLIF")
 # experiments=("SHD_LIF" "SHD_SE_adLIF")
+# experiments=("SHD_3MCadLIF" "SHD_2MCadLIF" "SHD_1MCadLIF")
+experiments=("SSC_2MCadLIF")
+# experiments=("SHD_3MCadLIF" "SHD_2MCadLIF" "SHD_1MCadLIF" "SHD_3MCLIF" "SHD_2MCLIF")
 runs=10
-gpu_count=2  # Number of available GPUs
-gpu_offset=4
+gpu_count=1
+gpu_offset=6
+delay=5  # Delay in seconds between experiments
 
-# use commit id as name
 commit_id=$(git rev-parse --short HEAD)
-
-# no recurrent command
-# exp_name=SHD_LIF_2layer_norecurrent l1.use_recurrent=False l2.use_recurrent=False l1.n_neurons=590 l2.input_size=590 l2.n_neurons=590 l_out.input_size=590
 
 for exp in "${experiments[@]}"; do
     name="${exp}_${commit_id}"
     for ((i=1; i<=runs; i++)); do
         gpu_id=$(( (i - 1) % gpu_count + gpu_offset ))
         echo "Running $exp - Iteration $i on GPU $gpu_id"
-        if [[ $i -lt $runs ]]; then
-            uv run run.py experiment=$exp random_seed=$RANDOM device=cuda:$gpu_id exp_name=$name&
+        if [[ $i -lt $runs || $exp != ${experiments[-1]} ]]; then
+            uv run run.py experiment=$exp random_seed=$RANDOM device=cuda:$gpu_id exp_name=$name &
         else
             uv run run.py experiment=$exp random_seed=$RANDOM device=cuda:$gpu_id exp_name=$name
         fi
     done
+    [[ $exp != ${experiments[-1]} ]] && sleep $delay
 done
-
-wait  # Wait for all background processes to finish
+wait

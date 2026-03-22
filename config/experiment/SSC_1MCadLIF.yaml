@@ -15,7 +15,7 @@ dt: 1.0
 dropout: 0.15
 l1:
   # Which cell to use
-  cell: se_adlif
+  cell: mcalif
 # input size of preprocessed SSC
   input_size: 140
   # number of neurons

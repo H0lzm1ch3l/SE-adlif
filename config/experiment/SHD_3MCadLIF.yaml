@@ -1,55 +1,70 @@
 # @package _global_
 
 defaults:
-  - /dataset: ecg
+  - /dataset: shd_val
 
-exp_name: ECG_1MCLIF
+exp_name: SHD_3MCadLIF
 # Whether to use a two-layer network
-two_layers: true
-
-# Parameters of SLAYER
-alpha: 5
-c: 0.2
+two_layers: True
+# SLAYER parameters
+alpha: 5.0
+c: 0.1
 dt: 1.0
+# Dropout rate
+dropout: 0.15
 
 l1:
   # Which cell to use
-  cell: mclif_v2
-  # input size of preprocessed ECG
-  input_size: 4
+  cell: mcalif
+  # input size of preprocessed SHD
+  input_size: 140
   # number of neurons
-  n_neurons: 27
-  # Range of tau_u
+  n_neurons: 220
+  # tau ranges
   tau_u_range: [5, 25]
   train_tau_u_method: sigmoid
   tau_d_range: [5, 20]
   train_tau_d_method: sigmoid
   tau_t_range: [1, 60]
   train_tau_t_method: sigmoid
+  # Range of tau_w
+  tau_w_range: [60, 300]
+  train_tau_w_method: sigmoid
+  # Factor for reparametrization of a and b (see paper)
+  q: 120
   # mc params
-  num_compartments: 1
+  # use_soft_reset: True
+  recurrent_dendrite: True
+  num_compartments: 3
   epsilon: 0.2
   train_u_p: True
   # slayer params
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
-
 l2:
-  # Which cell to use
-  cell: mclif_v2
-  input_size: 27
+ # Which cell to use
+  cell: mcalif
+  # input size of preprocessed SHD
+  input_size: 220
   # number of neurons
-  n_neurons: 34
-  # Range of tau_u
+  n_neurons: 240
+  # tau ranges
   tau_u_range: [5, 25]
   train_tau_u_method: sigmoid
   tau_d_range: [5, 20]
   train_tau_d_method: sigmoid
   tau_t_range: [1, 60]
   train_tau_t_method: sigmoid
+  # Range of tau_w
+  tau_w_range: [60, 300]
+  train_tau_w_method: sigmoid
+  # Factor for reparametrization of a and b (see paper)
+  q: 120
   # mc params
-  num_compartments: 1
+  # use_soft_reset: True
+  recurrent_dendrite: True
+  num_compartments: 3
   epsilon: 0.2
   train_u_p: True
   # slayer params
@@ -57,23 +72,20 @@ l2:
   c: ${c}
   dt: ${dt}
 l_out:
-  input_size: 34
+  input_size: 240
   n_neurons: ${dataset.num_classes}
   # Time constant of output layer 
-  tau_u_range: [3, 3]
+  tau_u_range: [15, 15]
   dt: ${dt}
 
 # Number of epochs
-n_epochs: 400
-
-# Dropout rate
-dropout: 0.15
+n_epochs: 300
 
 # Batch size
-batch_size: 64
+batch_size: 256
 
 # Loss aggregation
-loss_agg: summed_membrane_potentials
+loss_agg: softmax
 
 # Metric tracking
 tracking_metric: val_acc
@@ -83,5 +95,4 @@ tracking_mode: max
 # learning rate of the optimizer
 lr: 0.01
 factor: 0.9
-patience: 9999 # no lr decay
-
+patience: 9999

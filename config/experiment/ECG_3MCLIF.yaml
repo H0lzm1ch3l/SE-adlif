@@ -3,7 +3,7 @@
 defaults:
   - /dataset: ecg
 
-exp_name: ECG_M3CLIF
+exp_name: ECG_3MCLIF
 # Whether to use a two-layer network
 two_layers: true
 
@@ -21,11 +21,11 @@ l1:
   n_neurons: 18
   # Range of tau_u
   tau_u_range: [5, 25]
-  # train_tau_u_method: sigmoid
+  train_tau_u_method: sigmoid
   tau_d_range: [5, 20]
-  # train_tau_d_method: sigmoid
+  train_tau_d_method: sigmoid
   tau_t_range: [1, 60]
-  # train_tau_t_method: sigmoid
+  train_tau_t_method: sigmoid
   # mc params
   recurrent_dendrite: True
   num_compartments: 3
@@ -35,7 +35,6 @@ l1:
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
-
 l2:
   # Which cell to use
   cell: mclif_v2
@@ -44,11 +43,11 @@ l2:
   n_neurons: 26
   # Range of tau_u
   tau_u_range: [5, 25]
-  # train_tau_u_method: sigmoid
+  train_tau_u_method: sigmoid
   tau_d_range: [5, 20]
-  # train_tau_d_method: sigmoid
+  train_tau_d_method: sigmoid
   tau_t_range: [1, 60]
-  # train_tau_t_method: sigmoid
+  train_tau_t_method: sigmoid
   # mc params
   recurrent_dendrite: True
   num_compartments: 3
@@ -58,7 +57,6 @@ l2:
   alpha: ${alpha}
   c: ${c}
   dt: ${dt}
-
 l_out:
   input_size: 26
   n_neurons: ${dataset.num_classes}
