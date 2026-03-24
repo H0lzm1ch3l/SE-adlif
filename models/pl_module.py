@@ -67,12 +67,12 @@ class MLPSNN(pl.LightningModule):
         s_out = self.out_layer.initial_state(inputs.shape[0], inputs.device)
         if self.two_layers:
             s2 = self.l2.initial_state(inputs.shape[0], inputs.device)
-        out_sequence = []
-        sparsity_sequences = [[], []] if self.two_layers else [[]]
+            
+        out_sequence = torch.zeros((inputs.shape[0], inputs.shape[1], self.out_layer.out_features), device=inputs.device)
+        sparsity_sequences = torch.zeros((inputs.shape[1], 2 if self.two_layers else 1), device=inputs.device)
         single_step_prediction_limit = int(math.ceil(inputs.shape[1] * 0.5))
 
         # Iterate over each time step in the data
-        # TODO: Change - here is where I duplicate inputs for now, if the first layer is the MC neuron, otherwise there is still something to do
         for t, x_t in enumerate(inputs.unbind(1)):
             
             # Auto-regression for oscillator task
@@ -80,17 +80,17 @@ class MLPSNN(pl.LightningModule):
                 x_t = out.detach()
 
             out, s1 = self.l1(x_t, s1)
-            sparsity_sequences[0].append(out)
+            sparsity_sequences[t, 0] = out.mean()
             out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
             if self.two_layers:
                 out, s2 = self.l2(out, s2)
-                sparsity_sequences[1].append(out)
+                sparsity_sequences[t, 1] = out.mean()
                 out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
             out, s_out = self.out_layer(out, s_out)
-            out_sequence.append(out)
+            out_sequence[:, t] = out
         
-        self.sparsity_sequences = [torch.stack(sparsity_seq, dim=1) for sparsity_seq in sparsity_sequences]
-        return torch.stack(out_sequence, dim=1)
+        self.sparsity_sequences = sparsity_sequences.mean(dim=0)
+        return out_sequence
 
     def on_train_batch_end(self, outputs, batch, batch_idx: int):
         self.l1.apply_parameter_constraints()
@@ -220,8 +220,7 @@ class MLPSNN(pl.LightningModule):
         )
         
         if hasattr(self, 'sparsity_sequences'):
-            for i, sparsity_seq in enumerate(self.sparsity_sequences):
-                sparsity = (sparsity_seq.sum() / (sparsity_seq.numel())).item()
+            for i, sparsity in enumerate(self.sparsity_sequences):
                 self.log(
                     f"{prefix}sparsity_layer_{i+1}",
                     sparsity,

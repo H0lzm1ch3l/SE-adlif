@@ -12,11 +12,12 @@
 # experiments=("SSC_adLIF")
 # experiments=("SHD_LIF" "SHD_SE_adLIF")
 # experiments=("SHD_3MCadLIF" "SHD_2MCadLIF" "SHD_1MCadLIF")
-experiments=("SSC_2MCadLIF")
+# experiments=("ECG_LIF" "ECG_1MCLIF" "ECG_2MCLIF" "ECG_3MCLIF" "ECG_1MCadLIF" "ECG_2MCadLIF" "ECG_3MCadLIF" "ECG_SE_adLIF_2layer")
 # experiments=("SHD_3MCadLIF" "SHD_2MCadLIF" "SHD_1MCadLIF" "SHD_3MCLIF" "SHD_2MCLIF")
+experiments=("SHD_SE_adLIF")
 runs=10
 gpu_count=1
-gpu_offset=6
+gpu_offset=2
 delay=5  # Delay in seconds between experiments
 
 commit_id=$(git rev-parse --short HEAD)
