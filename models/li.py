@@ -6,7 +6,7 @@ from torch.nn import Module
 from torch import Tensor
 from torch.nn.parameter import Parameter
 
-from models.helpers import generic_scan, generic_scan_with_states
+from models.helpers import generic_scan, generic_scan_with_states, init_micheli_normal, init_simple_uniform
 from module.tau_trainers import TauTrainer, get_tau_trainer_class
 from omegaconf import DictConfig
 
@@ -69,11 +69,7 @@ class LI(Module):
     
     def reset_parameters(self):
         self.tau_u_trainer.reset_parameters()
-        torch.nn.init.uniform_(
-            self.weight,
-            -self.ff_gain  * torch.sqrt(1 / torch.tensor(self.in_features)),
-            self.ff_gain * torch.sqrt(1 / torch.tensor(self.in_features)),
-        )
+        init_simple_uniform(self.weight, self.ff_gain, axis=-1)
         torch.nn.init.zeros_(self.bias)
 
     @torch.compiler.disable

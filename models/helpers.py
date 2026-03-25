@@ -169,8 +169,8 @@ def adjust_neurons_for_parameter_budget(cfg: DictConfig):
     to match a target parameter budget, accounting for active ablation flags.
     """
     # Only run if a target_params budget is specified in the config/CLI
-    target_params = cfg.get('target_params', None)
-    if not target_params:
+    target_params = cfg.get('target_params', 0)
+    if target_params == 0:
         return
 
     target_params = int(target_params)

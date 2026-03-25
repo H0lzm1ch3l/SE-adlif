@@ -20,6 +20,8 @@ dependencies = [
     "aedat>=2.2.0",
     "torchvision>=0.20.1",
     "opencv-python>=4.11.0.86",
+    "statsmodels>=0.14.6",
+    "scikit-posthocs>=0.12.0",
 ]
 
 [[tool.uv.index]]

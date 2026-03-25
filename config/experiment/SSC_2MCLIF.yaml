@@ -30,6 +30,12 @@ l1:
   train_tau_t_method: sigmoid
   # mc params
   recurrent_dendrite: True
+  active_dendrite: True
+  passive_dendrite: True
+  proximal_dendrite: False
+  train_d_thr: False
+  soma_to_dendrite_recurrence: False
+  soma_to_dendrite_full_recurrence: False
   num_compartments: 2
   epsilon: 0.2
   train_u_p: True
@@ -52,6 +58,12 @@ l2:
   train_tau_t_method: sigmoid
   # mc params
   recurrent_dendrite: True
+  active_dendrite: True
+  passive_dendrite: True
+  proximal_dendrite: False
+  train_d_thr: False
+  soma_to_dendrite_recurrence: False
+  soma_to_dendrite_full_recurrence: False
   num_compartments: 2
   epsilon: 0.2
   train_u_p: True

@@ -37,8 +37,16 @@ class MCLIF2(Module):
         self.train_tau_d_method = cfg.get('train_tau_d_method', 'interpolation')
         self.train_tau_t_method = cfg.get('train_tau_t_method', 'interpolation')
         self.unroll = cfg.get('unroll', 10)
+        
+        # ablation config
         self.use_recurrent = cfg.get('use_recurrent', True)
         self.recurrent_dendrite = cfg.get('recurrent_dendrite', False)
+        self.soma_to_dendrite_recurrence = cfg.get('soma_to_dendrite_recurrence', False)
+        self.soma_to_dendrite_full_recurrence = cfg.get('soma_to_dendrite_full_recurrence', False)
+        self.proximal_dendrite = cfg.get('proximal_dendrite', True)
+        self.active_dendrite = cfg.get('active_dendrite', True)
+        self.passive_dendrite = cfg.get('passive_dendrite', True)
+        
         self.ff_gain = cfg.get('ff_gain', 1.0)
         s_thr = cfg.get('s_thr', 1.0)
         d_thr = cfg.get('d_thr', 1.0)
@@ -84,10 +92,17 @@ class MCLIF2(Module):
             self.register_buffer("u_p", torch.empty(size=()))
             self.u_p = u_p
         
-        self.weight = Parameter(
-            torch.empty((self.out_features + self.out_features * self.num_compartments, self.in_features), **factory_kwargs)
-        )
-        self.bias = Parameter(torch.empty(self.out_features + self.out_features * self.num_compartments, **factory_kwargs))
+        if self.proximal_dendrite:
+            self.weight = Parameter(
+                torch.empty((self.out_features + self.out_features * self.num_compartments, self.in_features), **factory_kwargs)
+            )
+            self.bias = Parameter(torch.empty(self.out_features + self.out_features * self.num_compartments, **factory_kwargs))
+        else:
+            self.weight = Parameter(
+                torch.empty((self.out_features * self.num_compartments, self.in_features), **factory_kwargs)
+            )
+            self.bias = Parameter(torch.empty(self.out_features * self.num_compartments, **factory_kwargs))
+        
         if self.use_recurrent:
             self.recurrent = Parameter(
                     torch.empty((self.out_features, self.out_features), **factory_kwargs)
@@ -99,11 +114,27 @@ class MCLIF2(Module):
         if self.recurrent_dendrite:
             self.dendritic_recurrent = Parameter(
                     torch.empty((self.out_features, self.num_compartments, self.num_compartments), **factory_kwargs)
-                )
-            self.register_buffer('dendritic_recurrency_mask', 1 - torch.eye(self.num_compartments))
+            )
         else:
             # registering an empty size tensor is required for the static analyser
             self.register_buffer("dendritic_recurrent", torch.empty(size=()))
+        # add weights for soma to dendrite bAP
+        if self.soma_to_dendrite_recurrence:
+            self.soma_to_dendrite_recurrent = Parameter(
+                    torch.empty((self.num_compartments, self.out_features), **factory_kwargs)
+                )
+        else:
+            # registering an empty size tensor is required for the static analyser
+            self.register_buffer("soma_to_dendrite_recurrent", torch.empty(size=()))
+        # add weights for soma to dendrite full recurrence
+        if self.soma_to_dendrite_full_recurrence:
+            self.soma_to_dendrite_full = Parameter(
+                    torch.empty((self.num_compartments * self.out_features, self.out_features), **factory_kwargs)
+                )
+        else:
+            # registering an empty size tensor is required for the static analyser
+            self.register_buffer("soma_to_dendrite_full", torch.empty(size=()))
+            
         self.tau_u_trainer: TauTrainer = get_tau_trainer_class(self.train_tau_u_method)(
             self.out_features,
             self.dt,
@@ -136,8 +167,12 @@ class MCLIF2(Module):
             beta = beta.reshape(-1, self.num_compartments)
             gamma = gamma.reshape(-1, self.num_compartments)
             
-            s_cur = cur[:, :self.num_out_neuron]
-            d_cur = cur[:, self.num_out_neuron:].reshape(-1, self.num_out_neuron, self.num_compartments)
+            if self.proximal_dendrite:
+                s_cur = cur[:, :self.num_out_neuron]
+                d_cur = cur[:, self.num_out_neuron:].reshape(-1, self.num_out_neuron, self.num_compartments)
+            else:
+                s_cur = 0
+                d_cur = cur.reshape(-1, self.num_out_neuron, self.num_compartments)
     
             if self.use_recurrent:
                 cur_rec = F.linear(z_tm1, recurrent, None)
@@ -148,14 +183,29 @@ class MCLIF2(Module):
                 cur_rec_d = torch.einsum('bni,nji->bnj', p_tm1, self.dendritic_recurrent)
                 d_cur = d_cur + cur_rec_d
                 
+            if self.soma_to_dendrite_recurrence:
+                cur_rec_d = F.linear(z_tm1, self.soma_to_dendrite_recurrent)
+                d_cur = d_cur + cur_rec_d
+                
+            if self.soma_to_dendrite_full_recurrence:
+                cur_rec_d = F.linear(z_tm1, self.soma_to_dendrite_full).reshape(-1, self.num_out_neuron, self.num_compartments)
+                d_cur = d_cur + cur_rec_d
+                
             d = beta * d_tm1 + (1-beta) * d_cur
-            p = SLAYER.apply(d - d_thr, self.alpha, self.c)
-            d = d * (1 - p.detach()) + (d_rest * p.detach())
-            t = gamma * t_tm1 + (1-gamma) * p
-            active_dendrite = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
-            dendritic_influx = (active_dendrite * self.u_p) + d
+
+            if self.active_dendrite:
+                p = SLAYER.apply(d - d_thr, self.alpha, self.c)
+                d = d * (1 - p.detach()) + (d_rest * p.detach())
+                t = gamma * t_tm1 + (1-gamma) * p
+                act = SLAYER.apply(t - self.epsilon, self.alpha, self.c)
+                if self.passive_dendrite:
+                    dendritic_influx = ((act * self.u_p) + d).sum(-1)
+                else:
+                    dendritic_influx = (act * self.u_p).sum(-1)
+            elif self.passive_dendrite:  
+                dendritic_influx = d.sum(-1)
                     
-            u = alpha * u_tm1 + (1-alpha) * (s_cur + dendritic_influx.sum(-1))
+            u = alpha * u_tm1 + (1-alpha) * (s_cur + dendritic_influx)
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest * z.detach()
             
@@ -199,10 +249,14 @@ class MCLIF2(Module):
         self.tau_t_trainer.reset_parameters()
         
         with torch.no_grad():
-            # decays = torch.cat((1-self.tau_u_trainer.get_decay(), 1-self.tau_d_trainer.get_decay()), dim=0)
-            decays = torch.zeros(self.out_features + self.out_features * self.num_compartments)
-            M = torch.cat((torch.ones(self.out_features), torch.ones(self.out_features * self.num_compartments) * self.num_compartments), dim=0)
-            init_micheli_normal(self.weight, threshold=self.d_thr, decay=decays, factor=M)
+            if self.proximal_dendrite:
+                decays = torch.zeros(self.out_features + self.out_features * self.num_compartments)
+                M = torch.cat((torch.ones(self.out_features), torch.ones(self.out_features * self.num_compartments) * self.num_compartments), dim=0)
+                init_micheli_normal(self.weight, threshold=self.d_thr, decay=decays, factor=M)
+            else:
+                decays = torch.zeros(self.out_features * self.num_compartments)
+                M = torch.ones(self.out_features * self.num_compartments) * self.num_compartments
+                init_micheli_normal(self.weight, threshold=self.d_thr, decay=decays, factor=M)
 
         torch.nn.init.zeros_(self.bias)
         if self.use_recurrent:
@@ -217,6 +271,18 @@ class MCLIF2(Module):
                     self.dendritic_recurrent[i],
                     gain=1.0,
                 )
+        if self.soma_to_dendrite_recurrence:
+            torch.nn.init.orthogonal_(
+                self.soma_to_dendrite_recurrent,
+                gain=1.0,
+            )
+        if self.soma_to_dendrite_full_recurrence:
+            for i in range(self.num_compartments):
+                torch.nn.init.orthogonal_(
+                    self.soma_to_dendrite_full[self.num_out_neuron*i:self.num_out_neuron*i+1],
+                    gain=1.0,
+                )
+                
         if self.train_u_p:
             # init_micheli_normal(self.u_p, threshold=torch.tensor(0.0), decay=self.tau_u_trainer.get_decay())
             torch.nn.init.zeros_(self.u_p)

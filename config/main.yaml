@@ -11,6 +11,7 @@ datadir: ./data
 cachedir: ./data/cache
 ckpt_path: null
 device: cuda:1
+target_params: 0
 
 hydra:  
   job:
