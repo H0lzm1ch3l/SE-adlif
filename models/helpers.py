@@ -1,5 +1,7 @@
 from functools import partial
+import logging
 from typing import Callable
+from omegaconf import DictConfig
 import torch
 import math
 
@@ -159,3 +161,66 @@ def inverse_A_law(y: torch.Tensor, a: float = 87.6):
     x2 = torch.exp(-1 + abs_y*log_a_p1)/a
     x = torch.where(abs_y < 1/log_a_p1, x1, x2)    
     return sign_y*x
+
+
+def adjust_neurons_for_parameter_budget(cfg: DictConfig):
+    """
+    Dynamically adjusts the number of neurons in a 2-layer network 
+    to match a target parameter budget, accounting for active ablation flags.
+    """
+    # Only run if a target_params budget is specified in the config/CLI
+    target_params = cfg.get('target_params', None)
+    if not target_params:
+        return
+
+    target_params = int(target_params)
+    
+    # 1. Extract structural constants
+    I_data = cfg.l1.input_size
+    # safely get num_classes (handles hydra interpolation)
+    num_classes = cfg.l_out.n_neurons 
+    C = cfg.l1.get('num_compartments', 1)
+    
+    # 2. Extract ablation flags
+    P = 1 if cfg.l1.get('proximal_dendrite', True) else 0
+    R_S2S = 1 if cfg.l1.get('use_recurrent', True) else 0
+    R_D2D = 1 if cfg.l1.get('recurrent_dendrite', False) else 0
+    R_S2Dself = 1 if cfg.l1.get('soma_to_dendrite_recurrence', False) else 0
+    R_S2Dfull = 1 if cfg.l1.get('soma_to_dendrite_full_recurrence', False) else 0
+    
+    # 3. Formulate the Quadratic Equation (A*O^2 + B*O + C_const = Target)
+    # W_factor determines if weights route to soma + dendrites, or just dendrites
+    W_factor = P + C 
+    
+    # A_layer is the N^2 scaling factor per layer
+    A_layer = R_S2S + (R_S2Dfull * C)
+    
+    # B_layer_0 is the linear scaling overhead per layer (states, taus, self-recurrences)
+    # 2 + 4C accounts for u_reset, somatic bias, tau_u + d_reset, u_p, dendritic bias, tau_d, tau_t
+    B_layer_0 = W_factor + 2 + (4 * C) + (R_D2D * (C ** 2)) + (R_S2Dself * C)
+    
+    # Combine for a 2-Layer network where L2 input = O
+    A = (2 * A_layer) + W_factor
+    B = (W_factor * I_data) + (2 * B_layer_0) + num_classes
+    C_const = 2 * num_classes  # Readout layer biases and tau_u
+    
+    # 4. Solve the Quadratic Formula
+    c_adj = C_const - target_params
+    discriminant = (B ** 2) - (4 * A * c_adj)
+    
+    if discriminant < 0:
+        raise ValueError(f"Cannot solve for {target_params} params. Imaginary roots. Budget too small for architecture.")
+        
+    # Calculate root and round to nearest integer
+    O = (-B + math.sqrt(discriminant)) / (2 * A)
+    n_neurons = int(round(O))
+    
+    logging.info(f"--- DYNAMIC SIZING ENGAGED ---")
+    logging.info(f"Target Params : {target_params}")
+    logging.info(f"Calculated    : {n_neurons} neurons per layer")
+    
+    # 5. Override the config objects dynamically
+    cfg.l1.n_neurons = n_neurons
+    cfg.l2.input_size = n_neurons
+    cfg.l2.n_neurons = n_neurons
+    cfg.l_out.input_size = n_neurons

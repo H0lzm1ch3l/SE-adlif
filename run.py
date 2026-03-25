@@ -3,8 +3,10 @@ import hydra
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import logging
+import math
 
 import torch
+from models.helpers import adjust_neurons_for_parameter_budget
 from models.pl_module import MLPSNN, SpikingResNetSNN
 import os
 
@@ -17,6 +19,10 @@ from module.tau_monitor import TauMonitor
 @hydra.main(config_path="config", config_name="main", version_base=None)
 def main(cfg: DictConfig):
     logging.getLogger().addHandler(logging.FileHandler("out.log"))
+    
+    # -> INJECTED FUNCTION HERE <-
+    adjust_neurons_for_parameter_budget(cfg)
+    
     logging.info(f"Experiment name: {cfg.exp_name}")
     pl.seed_everything(cfg.random_seed, workers=True)
 
