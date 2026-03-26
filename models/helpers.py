@@ -215,9 +215,9 @@ def adjust_neurons_for_parameter_budget(cfg: DictConfig):
     O = (-B + math.sqrt(discriminant)) / (2 * A)
     n_neurons = int(round(O))
     
-    logging.info(f"--- DYNAMIC SIZING ENGAGED ---")
-    logging.info(f"Target Params : {target_params}")
-    logging.info(f"Calculated    : {n_neurons} neurons per layer")
+    # logging.info(f"--- DYNAMIC SIZING ENGAGED ---")
+    # logging.info(f"Target Params : {target_params}")
+    # logging.info(f"Calculated    : {n_neurons} neurons per layer")
     
     # 5. Override the config objects dynamically
     cfg.l1.n_neurons = n_neurons

@@ -2150,6 +2150,7 @@ dependencies = [
     { name = "pytorch-lightning" },
     { name = "scikit-posthocs" },
     { name = "seaborn" },
+    { name = "statannotations" },
     { name = "statsmodels" },
     { name = "tensorboard" },
     { name = "tonic" },
@@ -2174,6 +2175,7 @@ requires-dist = [
     { name = "pytorch-lightning", specifier = "==2.2.1" },
     { name = "scikit-posthocs", specifier = ">=0.12.0" },
     { name = "seaborn", specifier = ">=0.13.2" },
+    { name = "statannotations", specifier = ">=0.7.2" },
     { name = "statsmodels", specifier = ">=0.14.6" },
     { name = "tensorboard", specifier = ">=2.20.0" },
     { name = "tonic", specifier = "==1.6" },
@@ -2284,6 +2286,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/28/e3/55dcc2cfbc3ca9c29519eb6884dd1415ecb53b0e934862d3559ddcb7e20b/stack_data-0.6.3.tar.gz", hash = "sha256:836a778de4fec4dcd1dcd89ed8abff8a221f58308462e1c4aa2a3cf30148f0b9", size = 44707 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f1/7b/ce1eafaf1a76852e2ec9b22edecf1daa58175c090266e9f6c64afcd81d91/stack_data-0.6.3-py3-none-any.whl", hash = "sha256:d5558e0c25a4cb0853cddad3d77da9891a08cb85dd9f9f91b9f8cd66e511e695", size = 24521 },
+]
+
+[[package]]
+name = "statannotations"
+version = "0.7.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "scipy" },
+    { name = "seaborn" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/07/6d/9f851b0ca42eb429f1b044634d63ff07bc4f6bbfb52639ceb7e03a5a46eb/statannotations-0.7.2.tar.gz", hash = "sha256:a93e428682d66c9fca5a399d5bd3fe7c9cef0500f53840c6f5362526b4501e93", size = 46629 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f1/ef/19390fa617d0417dd432d14a10eb5735a5513d7b6aebb357b10900d42af8/statannotations-0.7.2-py3-none-any.whl", hash = "sha256:61cd63c9bcdffe37dad30bb2a33aa6aa03f28df9636eda8deae1548f91be8580", size = 39684 },
 ]
 
 [[package]]

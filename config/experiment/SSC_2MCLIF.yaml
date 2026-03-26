@@ -28,6 +28,7 @@ l1:
   train_tau_d_method: sigmoid
   tau_t_range: [1, 60]
   train_tau_t_method: sigmoid
+  use_recurrent: True
   # mc params
   recurrent_dendrite: True
   active_dendrite: True
@@ -37,7 +38,7 @@ l1:
   soma_to_dendrite_recurrence: False
   soma_to_dendrite_full_recurrence: False
   num_compartments: 2
-  epsilon: 0.001
+  epsilon: 0.2
   train_u_p: True
   # slayer params
   alpha: ${alpha}
@@ -56,6 +57,7 @@ l2:
   train_tau_d_method: sigmoid
   tau_t_range: [1, 60]
   train_tau_t_method: sigmoid
+  use_recurrent: True
   # mc params
   recurrent_dendrite: True
   active_dendrite: True
@@ -65,7 +67,7 @@ l2:
   soma_to_dendrite_recurrence: False
   soma_to_dendrite_full_recurrence: False
   num_compartments: 2
-  epsilon: 0.001
+  epsilon: 0.2
   train_u_p: True
   # slayer params
   alpha: ${alpha}

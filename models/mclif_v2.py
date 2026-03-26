@@ -202,7 +202,9 @@ class MCLIF2(Module):
                     dendritic_influx = ((act * self.u_p) + d).sum(-1)
                 else:
                     dendritic_influx = (act * self.u_p).sum(-1)
-            elif self.passive_dendrite:  
+            elif self.passive_dendrite:
+                p = p_tm1  
+                t = t_tm1
                 dendritic_influx = d.sum(-1)
                     
             u = alpha * u_tm1 + (1-alpha) * (s_cur + dendritic_influx)

@@ -25,25 +25,25 @@ names=(
     "Pure_Passive"
     "No_Dend_Recur"
     "Trained_D_Thr"
-    "With_Proximal"
+    "Without_Proximal"
 )
 
 # Hydra command-line overrides for Layer 1 and Layer 2
 overrides=(
     # 2. Pure Active: Passive OFF
-    "l1.active_dendrite=True l2.active_dendrite=True l1.passive_dendrite=False l2.passive_dendrite=False l1.recurrent_dendrite=True l2.recurrent_dendrite=True l1.train_d_thr=False l2.train_d_thr=False l1.proximal_dendrite=False l2.proximal_dendrite=False"
+    "l1.active_dendrite=True l2.active_dendrite=True l1.passive_dendrite=False l2.passive_dendrite=False l1.recurrent_dendrite=True l2.recurrent_dendrite=True l1.train_d_thr=False l2.train_d_thr=False l1.proximal_dendrite=True l2.proximal_dendrite=True"
     
     # 3. Pure Passive: Active OFF, Recurrent Dendrite OFF
-    "l1.active_dendrite=False l2.active_dendrite=False l1.passive_dendrite=True l2.passive_dendrite=True l1.recurrent_dendrite=False l2.recurrent_dendrite=False l1.train_d_thr=False l2.train_d_thr=False l1.proximal_dendrite=False l2.proximal_dendrite=False"
+    "l1.active_dendrite=False l2.active_dendrite=False l1.passive_dendrite=True l2.passive_dendrite=True l1.recurrent_dendrite=False l2.recurrent_dendrite=False l1.train_d_thr=False l2.train_d_thr=False l1.proximal_dendrite=True l2.proximal_dendrite=True"
     
     # 4. No Dendritic Recur: Recurrent Dendrite OFF
-    "l1.active_dendrite=True l2.active_dendrite=True l1.passive_dendrite=True l2.passive_dendrite=True l1.recurrent_dendrite=False l2.recurrent_dendrite=False l1.train_d_thr=False l2.train_d_thr=False l1.proximal_dendrite=False l2.proximal_dendrite=False"
+    "l1.active_dendrite=True l2.active_dendrite=True l1.passive_dendrite=True l2.passive_dendrite=True l1.recurrent_dendrite=False l2.recurrent_dendrite=False l1.train_d_thr=False l2.train_d_thr=False l1.proximal_dendrite=True l2.proximal_dendrite=True"
     
     # 5. Trained Threshold: Train D Thr ON
-    "l1.active_dendrite=True l2.active_dendrite=True l1.passive_dendrite=True l2.passive_dendrite=True l1.recurrent_dendrite=True l2.recurrent_dendrite=True l1.train_d_thr=True l2.train_d_thr=True l1.proximal_dendrite=False l2.proximal_dendrite=False"
+    "l1.active_dendrite=True l2.active_dendrite=True l1.passive_dendrite=True l2.passive_dendrite=True l1.recurrent_dendrite=True l2.recurrent_dendrite=True l1.train_d_thr=True l2.train_d_thr=True l1.proximal_dendrite=True l2.proximal_dendrite=True"
     
     # 6. Proximal Dendrite: Proximal ON
-    "l1.active_dendrite=True l2.active_dendrite=True l1.passive_dendrite=True l2.passive_dendrite=True l1.recurrent_dendrite=True l2.recurrent_dendrite=True l1.train_d_thr=False l2.train_d_thr=False l1.proximal_dendrite=True l2.proximal_dendrite=True"
+    "l1.active_dendrite=True l2.active_dendrite=True l1.passive_dendrite=True l2.passive_dendrite=True l1.recurrent_dendrite=True l2.recurrent_dendrite=True l1.train_d_thr=False l2.train_d_thr=False l1.proximal_dendrite=False l2.proximal_dendrite=False"
 )
 
 for idx in "${!names[@]}"; do
@@ -71,8 +71,7 @@ for idx in "${!names[@]}"; do
     done
     
     # Ensure all remaining runs in this specific ablation block finish before moving to the next ablation
-    wait 
     sleep $delay
 done
-
+wait 
 echo "Ablation study complete!"

@@ -22,6 +22,7 @@ dependencies = [
     "opencv-python>=4.11.0.86",
     "statsmodels>=0.14.6",
     "scikit-posthocs>=0.12.0",
+    "statannotations>=0.7.2",
 ]
 
 [[tool.uv.index]]
