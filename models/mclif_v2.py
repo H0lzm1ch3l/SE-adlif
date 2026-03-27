@@ -184,7 +184,7 @@ class MCLIF2(Module):
                 d_cur = d_cur + cur_rec_d
                 
             if self.soma_to_dendrite_recurrence:
-                cur_rec_d = F.linear(z_tm1, self.soma_to_dendrite_recurrent)
+                cur_rec_d = torch.einsum('bn,ijn->bni', z_tm1, self.soma_to_dendrite_recurrent[:, None, :])
                 d_cur = d_cur + cur_rec_d
                 
             if self.soma_to_dendrite_full_recurrence:
