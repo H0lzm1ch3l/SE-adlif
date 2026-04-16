@@ -13,16 +13,17 @@
 # experiments=("SHD_LIF" "SHD_SE_adLIF")
 # experiments=("SHD_3MCadLIF" "SHD_2MCadLIF" "SHD_1MCadLIF")
 # experiments=("ECG_LIF" "ECG_1MCLIF" "ECG_2MCLIF" "ECG_3MCLIF" "ECG_1MCadLIF" "ECG_2MCadLIF" "ECG_3MCadLIF" "ECG_SE_adLIF_2layer")
-# experiments=("SHD_3MCadLIF" "SHD_2MCadLIF" "SHD_1MCadLIF" "SHD_3MCLIF" "SHD_2MCLIF")
-experiments=("SSC_2MCLIF")
+# experiments=("SSC_2MCLIF")
+# experiments=("SSC_2MCLIF")
 # experiments=("SSC_SE_adLIF" "SSC_LIF")
 # experiments=("SSC_LIF" "SSC_SE_adLIF")
+experiments=("SSC_DH_SNN")
 runs=10
 gpu_count=1
-gpu_offset=1
+gpu_offset=0
 delay=5  # Delay in seconds between experiments
 
-target_params=1600000
+target_params=0
 
 commit_id=$(git rev-parse --short HEAD)
 
@@ -32,9 +33,9 @@ for exp in "${experiments[@]}"; do
         gpu_id=$(( (i - 1) % gpu_count + gpu_offset ))
         echo "Running $exp - Iteration $i on GPU $gpu_id"
         if [[ $i -lt $runs || $exp != ${experiments[-1]} ]]; then
-            uv run run.py experiment=$exp random_seed=$RANDOM device=cuda:$gpu_id exp_name=$name &
+            uv run run.py experiment=$exp target_params=$target_params random_seed=$RANDOM device=cuda:$gpu_id exp_name=$name &
         else
-            uv run run.py experiment=$exp random_seed=$RANDOM device=cuda:$gpu_id exp_name=$name
+            uv run run.py experiment=$exp target_params=$target_params random_seed=$RANDOM device=cuda:$gpu_id exp_name=$name
         fi
     done
     [[ $exp != ${experiments[-1]} ]] && sleep $delay

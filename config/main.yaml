@@ -10,7 +10,7 @@ logdir: ./results
 datadir: ./data
 cachedir: ./data/cache
 ckpt_path: null
-device: cuda:1
+device: cuda:0
 target_params: 0
 
 hydra:  

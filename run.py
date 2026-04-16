@@ -8,6 +8,7 @@ import math
 import torch
 from models.helpers import adjust_neurons_for_parameter_budget
 from models.pl_module import MLPSNN, SpikingResNetSNN
+from models.dhsnn import DHSNN
 import os
 
 from pytorch_lightning.strategies import SingleDeviceStrategy
@@ -34,6 +35,8 @@ def main(cfg: DictConfig):
     model_type = cfg.get('model_type', 'mlp')
     if model_type == 'resnet':
         model = SpikingResNetSNN(cfg)
+    elif model_type == 'dhsnn':
+        model = DHSNN(cfg)
     else:
         model = MLPSNN(cfg)
     callbacks = []
@@ -48,7 +51,7 @@ def main(cfg: DictConfig):
         logging_interval='step'
     )
     
-    nan_callback = pl.callbacks.early_stopping.EarlyStopping(monitor='train_loss_step', check_finite=True, patience=50)
+    nan_callback = pl.callbacks.early_stopping.EarlyStopping(monitor='train_loss_step', check_finite=True, patience=999999)
     tau_monitor = TauMonitor()
 
     # tau_monitor = TauMonitor()

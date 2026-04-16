@@ -1,0 +1,48 @@
+# @package _global_
+# DH-SNN reproduction configuration for SHD.
+# Use with `python run.py +experiment=SHD_DH_SNN`
+
+defaults:
+  - /dataset: shd
+
+exp_name: SHD_DH_SNN
+model_type: dhsnn
+
+# One hidden dense DH-SNN layer followed by a readout integrator.
+two_layers: false
+
+dropout: 0.0
+
+l1:
+  cell: dhsnn
+  input_size: 140
+  n_neurons: 64
+  tau_minitializer: uniform
+  low_m: 0
+  high_m: 4
+  tau_ninitializer: uniform
+  low_n: 2
+  high_n: 6
+  branch: 4
+  vth: 1.0
+  dt: 1
+  test_sparsity: false
+
+l_out:
+  input_size: 64
+  n_neurons: ${dataset.num_classes}
+  tau_minitializer: uniform
+  low_m: 0
+  high_m: 4
+  dt: 1
+
+n_epochs: 300
+batch_size: 256
+
+loss_agg: softmax
+tracking_metric: val_acc
+tracking_mode: max
+
+lr: 0.01
+factor: 0.9
+patience: 9999
