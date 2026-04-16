@@ -177,12 +177,11 @@ class MCAdLIF(Module):
             dendritic_influx = (active_dendrite * self.u_p) + d
             
             # calculate w based on prior timesteps u and AP to "leak energy"
-            w = (beta * w_tm1 + (1.0 - beta) * (a * u_tm1 + b * z) * self.q)
-
             u = alpha * u_tm1 + (1.0 - alpha) * (s_cur - w_tm1 + dendritic_influx.sum(-1))
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + (u_rest * z.detach())
             
+            w = (beta * w_tm1 + (1.0 - beta) * (a * u_tm1 + b * z_tm1) * self.q)
             return (u, z, w, d, t, p), z
         self.step = step_fn
         
