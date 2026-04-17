@@ -181,7 +181,7 @@ class MCAdLIF(Module):
             z = SLAYER.apply(u - s_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + (u_rest * z.detach())
             
-            w = (beta * w_tm1 + (1.0 - beta) * (a * u_tm1 + b * z_tm1) * self.q)
+            w = (beta * w_tm1 + (1.0 - beta) * (a * u_tm1 + b * z) * self.q)
             return (u, z, w, d, t, p), z
         self.step = step_fn
         
