@@ -51,7 +51,7 @@ def main(cfg: DictConfig):
         logging_interval='step'
     )
     
-    nan_callback = pl.callbacks.early_stopping.EarlyStopping(monitor='train_loss_step', check_finite=True, patience=999999)
+    nan_callback = pl.callbacks.early_stopping.EarlyStopping(monitor='train_loss_epoch', check_finite=True, patience=999)
     tau_monitor = TauMonitor()
 
     # tau_monitor = TauMonitor()

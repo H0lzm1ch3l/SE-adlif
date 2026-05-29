@@ -103,7 +103,13 @@ class AdLIF2(Module):
             u_thr = u - thr
             z = spike_grad_injection_function(u_thr, self.alpha, self.c)
             u = u * (1 - z.detach()) + u_rest*z.detach()
+            
             w = beta * w_tm1 + (1-beta) * ((a * u + b * z)  * self.q + w_cur)
+            
+            # w1 = beta1 * w_tm1 + (1-beta1) * ((a1 * u + b1 * z)  * self.q + w_cur)
+            # w2 = beta2 * w_tm2 + (1-beta2) * ((a2 * u + b2 * z)  * self.q + w_cur)
+            # add another dimension to w, how many "adaptation heads" there are
+            
             return (u, z, w), z
         self.step = step_fn
         

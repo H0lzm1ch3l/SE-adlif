@@ -1,0 +1,55 @@
+# @package _global_
+# DH-SRNN (Dendritic Heterogeneity Spiking Recurrent Neural Network) for SSC
+# Supports: sparse connections, bidirectional processing, configurable layer types
+
+defaults:
+  - /dataset: ssc
+
+exp_name: SSC_DH_SRNN
+model_type: dhsnn
+
+# Network architecture options
+two_layers: false
+
+# DH-SRNN specific options
+use_recurrent: true          # Use recurrent (SRNN) instead of feedforward (SNN)
+use_bidirectional: true     # Process sequence forward AND backward
+use_sparse: true            # Enable sparse dendritic connection routing
+
+dropout: 0.0
+
+# Hidden layer configuration (supports arbitrary number of layers)
+l1:
+  cell: dhsnn
+  layer_type: srnn          # 'snn' for feedforward, 'srnn' for recurrent
+  input_size: 700
+  n_neurons: 64
+  tau_minitializer: uniform
+  low_m: 0
+  high_m: 4
+  tau_ninitializer: uniform
+  low_n: 2
+  high_n: 6
+  branch: 4                 # Number of dendritic branches
+  vth: 1.0
+  dt: 1
+  use_sparse: ${use_sparse}  # Toggle sparse connections per layer
+
+l_out:
+  input_size: 64
+  n_neurons: ${dataset.num_classes}
+  tau_minitializer: uniform
+  low_m: 0
+  high_m: 4
+  dt: 1
+
+n_epochs: 300
+batch_size: 256
+
+loss_agg: softmax
+tracking_metric: val_acc
+tracking_mode: max
+
+lr: 0.01
+factor: 0.9
+patience: 9999
