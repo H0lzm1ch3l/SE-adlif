@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neuron Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .neuron-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .dendrite {
+            width: 50px;
+            height: 20px;
+            margin-right: 5px;
+            border: 1px solid #ccc;
+            background-color: #f0f0f0;
+        }
+        .soma {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: #ddd;
+            margin-left: 5px;
+        }
+        .spike {
+            background-color: red !important;
+        }
+        .time-line {
+            position: absolute;
+            width: 2px;
+            height: 100%;
+            background-color: blue;
+            top: 0;
+        }
+        #viz {
+            position: relative;
+            border: 1px solid #ccc;
+            padding: 10px;
+        }
+        #controls {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Multi-Compartment LIF Neuron Visualization</h1>
+    <div id="controls">
+        <button id="play">Play</button>
+        <button id="pause">Pause</button>
+        <button id="reset">Reset</button>
+        <input type="range" id="speed" min="1" max="100" value="10">
+        <label for="speed">Speed</label>
+    </div>
+    <div id="viz"></div>
+
+    <script>
+        let data = null;
+        let currentTime = 0;
+        let playing = false;
+        let interval = null;
+
+        // Load data
+        fetch('neuron_viz_data.json')
+            .then(response => response.json())
+            .then(json => {
+                data = json;
+                initViz();
+            });
+
+        function initViz() {
+            const viz = d3.select('#viz');
+            const neurons = data.num_neurons;
+            const compartments = data.num_compartments;
+
+            // Create neuron rows
+            const rows = viz.selectAll('.neuron-row')
+                .data(d3.range(neurons))
+                .enter()
+                .append('div')
+                .attr('class', 'neuron-row');
+
+            // Add dendrites
+            rows.each(function(neuron) {
+                const row = d3.select(this);
+                for (let comp = 0; comp < compartments; comp++) {
+                    row.append('div')
+                        .attr('class', 'dendrite')
+                        .attr('id', `dend-${neuron}-${comp}`);
+                }
+                // Add soma
+                row.append('div')
+                    .attr('class', 'soma')
+                    .attr('id', `soma-${neuron}`);
+            });
+
+            // Add time line
+            viz.append('div')
+                .attr('id', 'time-line')
+                .attr('class', 'time-line')
+                .style('left', '10px');
+
+            updateViz();
+        }
+
+        function updateViz() {
+            if (!data) return;
+
+            const vizWidth = document.getElementById('viz').offsetWidth - 20;
+            const timeProgress = currentTime / data.time_steps;
+            const timePos = 10 + timeProgress * vizWidth;
+
+            d3.select('#time-line')
+                .style('left', `${timePos}px`);
+
+            // Update dendrites
+            for (let neuron = 0; neuron < data.num_neurons; neuron++) {
+                for (let comp = 0; comp < data.num_compartments; comp++) {
+                    const dendData = data.dendrites.filter(d => d.t === currentTime && d.neuron === neuron && d.compartment === comp);
+                    const value = dendData.length > 0 ? dendData[0].value : 0;
+                    const color = d3.interpolateBlues(Math.abs(value) / 2); // Assuming values around 0-2 or so
+                    d3.select(`#dend-${neuron}-${comp}`)
+                        .style('background-color', color);
+                }
+            }
+
+            // Update somas
+            for (let neuron = 0; neuron < data.num_neurons; neuron++) {
+                const spikeData = data.spikes.filter(s => s.t === currentTime && s.neuron === neuron);
+                const isSpiking = spikeData.length > 0;
+                d3.select(`#soma-${neuron}`)
+                    .classed('spike', isSpiking);
+            }
+        }
+
+        function play() {
+            if (playing) return;
+            playing = true;
+            interval = setInterval(() => {
+                currentTime++;
+                if (currentTime >= data.time_steps) {
+                    currentTime = 0;
+                }
+                updateViz();
+            }, 1000 / document.getElementById('speed').value);
+        }
+
+        function pause() {
+            playing = false;
+            if (interval) {
+                clearInterval(interval);
+                interval = null;
+            }
+        }
+
+        function reset() {
+            pause();
+            currentTime = 0;
+            updateViz();
+        }
+
+        document.getElementById('play').addEventListener('click', play);
+        document.getElementById('pause').addEventListener('click', pause);
+        document.getElementById('reset').addEventListener('click', reset);
+        document.getElementById('speed').addEventListener('input', () => {
+            if (playing) {
+                pause();
+                play();
+            }
+        });
+    </script>
+</body>
+</html>

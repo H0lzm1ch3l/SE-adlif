@@ -1,6 +1,7 @@
 import math
 import pytorch_lightning as pl
 import torch
+import torch.nn as nn
 import torchmetrics
 from torch.nn import CrossEntropyLoss, MSELoss
 from omegaconf import DictConfig
@@ -28,6 +29,15 @@ layer_map = {
 }
 
 
+def normalize_hidden_layers(cfg):
+    if cfg.get('hidden_layers') is not None:
+        return cfg.hidden_layers
+    hidden_layers = [cfg.l1]
+    if cfg.get('two_layers', False):
+        hidden_layers.append(cfg.l2)
+    return hidden_layers
+
+
 class MLPSNN(pl.LightningModule):
     def __init__(
         self,
@@ -47,12 +57,15 @@ class MLPSNN(pl.LightningModule):
         self.factor = cfg.factor
         self.patience = cfg.patience
 
-        self.auto_regression =  cfg.get('auto_regression', False)
+        self.auto_regression = cfg.get('auto_regression', False)
 
-        # Define the model
-        self.l1 = layer_map[cfg.l1.cell](cfg.l1)
-        if cfg.two_layers:
-            self.l2 = layer_map[cfg.l2.cell](cfg.l2)
+        # Define the model hidden layers
+        self.hidden_layers_cfg = normalize_hidden_layers(cfg)
+        self.hidden_layers = nn.ModuleList(
+            [layer_map[layer_cfg.cell](layer_cfg) for layer_cfg in self.hidden_layers_cfg]
+        )
+        self.num_hidden_layers = len(self.hidden_layers)
+        self.two_layers = cfg.get('two_layers', self.num_hidden_layers > 1)
         self.out_layer = LI(cfg.l_out)
         
         self.output_func = cfg.get('loss_agg', 'softmax')
@@ -63,13 +76,11 @@ class MLPSNN(pl.LightningModule):
         self, inputs: torch.Tensor) -> tuple[torch.Tensor, list[torch.Tensor]]:
         # print(f"Input shape: {inputs.shape}")
 
-        s1 = self.l1.initial_state(inputs.shape[0], inputs.device)
+        states = [layer.initial_state(inputs.shape[0], inputs.device) for layer in self.hidden_layers]
         s_out = self.out_layer.initial_state(inputs.shape[0], inputs.device)
-        if self.two_layers:
-            s2 = self.l2.initial_state(inputs.shape[0], inputs.device)
-            
+
         out_sequence = torch.zeros((inputs.shape[0], inputs.shape[1], self.out_layer.out_features), device=inputs.device)
-        sparsity_sequences = torch.zeros((inputs.shape[1], 2 if self.two_layers else 1), device=inputs.device)
+        sparsity_sequences = torch.zeros((inputs.shape[1], self.num_hidden_layers), device=inputs.device)
         single_step_prediction_limit = int(math.ceil(inputs.shape[1] * 0.5))
 
         # Iterate over each time step in the data
@@ -79,13 +90,12 @@ class MLPSNN(pl.LightningModule):
             if self.auto_regression and t >= single_step_prediction_limit:
                 x_t = out.detach()
 
-            out, s1 = self.l1(x_t, s1)
-            sparsity_sequences[t, 0] = out.mean()
-            out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
-            if self.two_layers:
-                out, s2 = self.l2(out, s2)
-                sparsity_sequences[t, 1] = out.mean()
+            out = x_t
+            for layer_idx, layer in enumerate(self.hidden_layers):
+                out, states[layer_idx] = layer(out, states[layer_idx])
+                sparsity_sequences[t, layer_idx] = out.mean()
                 out = torch.nn.functional.dropout(out, p=self.dropout, training=self.training)
+
             out, s_out = self.out_layer(out, s_out)
             out_sequence[:, t] = out
         
@@ -93,9 +103,9 @@ class MLPSNN(pl.LightningModule):
         return out_sequence
 
     def on_train_batch_end(self, outputs, batch, batch_idx: int):
-        self.l1.apply_parameter_constraints()
-        if self.two_layers:
-            self.l2.apply_parameter_constraints()
+        for layer in self.hidden_layers:
+            if hasattr(layer, 'apply_parameter_constraints'):
+                layer.apply_parameter_constraints()
         self.out_layer.apply_parameter_constraints()
 
     def process_predictions_and_compute_losses(self, outputs, targets, block_idx):

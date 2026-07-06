@@ -7,7 +7,7 @@
 # experiments=("SSC_1MCadLIF") #  "SSC_2MCadLIF") #  "SSC_3MCadLIF")
 # experiments=("ECG_LIF" "ECG_1MCLIF" "ECG_2MCLIF" "ECG_3MCLIF" "ECG_1MCadLIF" "ECG_2MCadLIF" "ECG_3MCadLIF")
 # experiments=("SSC_1MCLIF")
-# experiments=("SSC_1MCadLIF")
+experiments=("SSC_1MCadLIF")
 # experiments=("SSC_SE_adLIF")
 # experiments=("SSC_adLIF")
 # experiments=("SHD_LIF" "SHD_SE_adLIF")
@@ -17,9 +17,9 @@
 # experiments=("SSC_2MCLIF")
 # experiments=("SSC_SE_adLIF" "SSC_LIF")
 # experiments=("SSC_LIF" "SSC_SE_adLIF")
-experiments=("SSC_DH_SNN")
+# experiments=("SSC_DH_SRNN")
 runs=10
-gpu_count=1
+gpu_count=2
 gpu_offset=0
 delay=5  # Delay in seconds between experiments
 

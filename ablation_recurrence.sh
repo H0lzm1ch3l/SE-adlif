@@ -11,7 +11,7 @@ runs=10
 gpus=(0 2 3 4 5 6 7)             # Corrected: removed '=' and spaces
 gpu_count=${#gpus[@]}          # Automatically get the number of available GPUs
 delay=5                      # Delay in seconds between experiments
-MAX_CONCURRENT_JOBS=8        # Sliding window concurrency limit
+MAX_CONCURRENT_JOBS=50        # Sliding window concurrency limit
 
 commit_id=$(git rev-parse --short HEAD)
 
@@ -20,7 +20,6 @@ STRUCTURAL_CONSTANTS="l1.active_dendrite=True l2.active_dendrite=True l1.passive
 
 # Names of our 5 experiments
 names=(
-    "Recur_Baseline"
     "Recur_LSTM_Style"
     "Recur_Self_Vs_Lateral"
     "Recur_Max_Dense"
@@ -29,9 +28,6 @@ names=(
 
 # Hydra command-line overrides specifically for the temporal routing
 overrides=(
-    # 1. Baseline: S2S + D2D (S2D-Self and S2D-Full OFF)
-    "l1.use_recurrent=True l2.use_recurrent=True l1.recurrent_dendrite=True l2.recurrent_dendrite=True l1.soma_to_dendrite_recurrence=False l2.soma_to_dendrite_recurrence=False l1.soma_to_dendrite_full_recurrence=False l2.soma_to_dendrite_full_recurrence=False"
-    
     # 2. LSTM-Style: S2S + D2D + S2D-Self
     "l1.use_recurrent=True l2.use_recurrent=True l1.recurrent_dendrite=True l2.recurrent_dendrite=True l1.soma_to_dendrite_recurrence=True l2.soma_to_dendrite_recurrence=True l1.soma_to_dendrite_full_recurrence=False l2.soma_to_dendrite_full_recurrence=False"
     

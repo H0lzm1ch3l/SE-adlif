@@ -1,0 +1,112 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from statannotations.Annotator import Annotator
+
+# ==========================================
+# 1. RAW DATA (SSC LIF)
+# ==========================================
+shd_lif = [0.883392215, 0.894876301, 0.894876301, 0.908568919, 0.893992961, 0.876325071, 0.884275615, 0.869699657, 0.877650201, 0.880742073]
+shd_se_adlif = [0.949646652, 0.931978822, 0.940371037, 0.939045966, 0.933303893, 0.936837435, 0.942579508, 0.944346309, 0.935954034, 0.931095421]
+shd_1mclif = [0.895759702, 0.903710246, 0.901060045, 0.912544191, 0.912544191, 0.914310932, 0.898851573, 0.902826846, 0.908568919, 0.881625414]
+shd_2mclif = [0.912544191, 0.907243788, 0.901501775, 0.91121906, 0.905918717, 0.907243788, 0.898851573, 0.898851573, 0.89310956, 0.90989399]
+shd_3mclif = [0.878533542, 0.907685518, 0.906360447, 0.908568919, 0.883392215, 0.903710246, 0.908568919, 0.905477047, 0.898409903, 0.897968173]
+shd_1mcadlif = [0.950088322, 0.952296793, 0.938604236, 0.945229709, 0.945229709, 0.943462908, 0.935954034, 0.934628963, 0.947879851, 0.949204922]
+shd_2mcadlif = [0.94611305, 0.935070693, 0.954063594, 0.94611305, 0.933303893, 0.943021178, 0.945229709, 0.947879851, 0.944346309, 0.939045966]
+shd_3mcadlif = [0.942579508, 0.94611305, 0.940812707, 0.941254437, 0.954063594, 0.941254437, 0.941696107, 0.936395764, 0.921819806, 0.935070693]
+
+ssc_3mcadlif = [0.789422035, 0.793150842, 0.79398489, 0.802423716, 0.798891187, 0.806201577, 0.8031106, 0.804582477, 0.805171251, 0.801148057]
+ssc_2mcadlif = [0.805514693, 0.804680586, 0.804778755, 0.806888402, 0.809635937, 0.801540554, 0.802570879, 0.807280958, 0.80644685, 0.808065951]
+ssc_1mcadlif = [0.806299686, 0.805465579, 0.809979379, 0.806495905, 0.803895593, 0.80708468, 0.806250632, 0.802227437, 0.805269361, 0.807967842]
+ssc_3mclif = [0.770532846, 0.770091236, 0.767638087, 0.770925343, 0.76498872, 0.762388408, 0.774408817, 0.771563172, 0.751741707, 0.7585124373435974]
+ssc_2mclif = [0.764792442, 0.777107239, 0.775733471, 0.768324971, 0.781915426, 0.76616621, 0.7808851, 0.774948478, 0.76219213, 0.773918152]
+ssc_1mclif = [0.767490923, 0.774997532, 0.761063695, 0.771366894, 0.764154673, 0.775340974, 0.769747794, 0.7718575, 0.770630956, 0.765037775]
+ssc_lif = [0.761456192, 0.763762116, 0.762241185, 0.758365214, 0.753409863, 0.763320565, 0.76273185, 0.763418674, 0.75596112, 0.759101152]
+ssc_se_adlif = [0.797860861, 0.799578071, 0.800706506, 0.804778755, 0.796143651, 0.808899999, 0.8076244, 0.801834941, 0.799921513, 0.806545019]
+
+ecg_lif = [0.649811089, 0.635626733, 0.634956181, 0.743061781, 0.63230139, 0.757600546, 0.786623478, 0.646905541, 0.613325238, 0.766104639]
+ecg_1mclif = [0.8592844605445862, 0.844162405, 0.851767063, 0.85608995, 0.861666679, 0.862593412, 0.855408549, 0.860620022, 0.859911382, 0.865471721]
+ecg_2mclif = [0.8430776, 0.861475885, 0.850753129, 0.850278854, 0.870797694, 0.812501013, 0.845743299, 0.858526707, 0.854814351, 0.850992978]
+ecg_3mclif = [0.8365468978881836, 0.848343611, 0.834982336, 0.862435341, 0.840700805, 0.852339447, 0.82780838, 0.855561197, 0.847651303, 0.853729546]
+ecg_se_adlif = [0.870372474, 0.882534444, 0.871293783, 0.877442896, 0.870290697, 0.880550146, 0.871964276, 0.872035146, 0.875431359, 0.878211498]
+ecg_1mcadlif = [0.870923102, 0.880899012, 0.878429592, 0.889408588, 0.881978393, 0.868279159, 0.86928767, 0.867052615, 0.878587663, 0.88262713]
+ecg_2mcadlif = [0.799292445, 0.880250335, 0.885347307, 0.882905126, 0.881073475, 0.88013041, 0.876423478, 0.886862814, 0.875147879, 0.888182044]
+ecg_3mcadlif = [0.834268212, 0.831678867, 0.872476697, 0.86253345, 0.874052167, 0.886475742, 0.834028363, 0.835374832, 0.881820321, 0.872967303]
+
+# Multiply by 100 to show percentages on the y-axis, which is standard for accuracy
+ssc_lif = [x * 100 for x in ssc_lif]
+ssc_1mclif = [x * 100 for x in ssc_1mclif]
+ssc_2mclif = [x * 100 for x in ssc_2mclif]
+ssc_3mclif = [x * 100 for x in ssc_3mclif]
+
+# Convert into a Pandas DataFrame (Long Format)
+data = []
+for val in ssc_lif: data.append({'Model': '0-Comp (LIF)', 'Accuracy (%)': val})
+for val in ssc_1mclif: data.append({'Model': '1-Comp (MC)', 'Accuracy (%)': val})
+for val in ssc_2mclif: data.append({'Model': '2-Comp (MC)', 'Accuracy (%)': val})
+for val in ssc_3mclif: data.append({'Model': '3-Comp (MC)', 'Accuracy (%)': val})
+
+df = pd.DataFrame(data)
+
+# ==========================================
+# 2. PLOT CONFIGURATION
+# ==========================================
+# Set paper-friendly aesthetics
+sns.set_theme(style="ticks", context="paper", font_scale=1.2)
+
+fig, ax = plt.subplots(figsize=(8, 6))
+
+# Define the exact order of the x-axis
+order = ['0-Comp (LIF)', '1-Comp (MC)', '2-Comp (MC)', '3-Comp (MC)']
+
+# Create Boxplot (White boxes, black borders for clean printing)
+sns.boxplot(data=df, x='Model', y='Accuracy (%)', order=order, 
+            ax=ax, color='white', linewidth=1.5, fliersize=0)
+
+# Add Stripplot (Shows the exact 10 runs as dots over the boxes)
+sns.stripplot(data=df, x='Model', y='Accuracy (%)', order=order, 
+              ax=ax, color='black', alpha=0.6, jitter=True, size=5)
+
+# ==========================================
+# 3. ADD STATISTICAL BRACKETS
+# ==========================================
+# Define the pairs you want to compare on the plot. 
+# We don't need to show all of them, just the most important ones to avoid clutter.
+pairs = [
+    ('0-Comp (LIF)', '1-Comp (MC)'),
+    ('0-Comp (LIF)', '2-Comp (MC)'),
+    ('0-Comp (LIF)', '3-Comp (MC)'),
+    ('2-Comp (MC)', '3-Comp (MC)')
+]
+
+# Provide the exact adjusted p-values from your Tukey results!
+# This ensures 100% consistency between your script output and your thesis figures.
+# Order matches the pairs above: 
+# (0 vs 1: 0.0076), (0 vs 2: 0.0002), (0 vs 3: 0.1136), (2 vs 3: 0.0807)
+p_values = [0.0076, 0.0002, 0.1136, 0.0807]
+
+# Configure the annotator
+annotator = Annotator(ax, pairs, data=df, x='Model', y='Accuracy (%)', order=order)
+annotator.configure(text_format='star', loc='inside')
+
+# Set the custom p-values and apply
+annotator.set_custom_annotations([
+    '**' if p < 0.01 else '*' if p < 0.05 else 'ns' for p in p_values
+])
+annotator.annotate()
+
+# ==========================================
+# 4. FINAL TOUCHES & EXPORT
+# ==========================================
+ax.set_title("Performance of Multi-Compartment Architectures on SSC (LIF)", pad=15, fontweight='bold')
+ax.set_xlabel("") # Remove the x-axis label since the model names are self-explanatory
+ax.set_ylabel("Test Accuracy (%)")
+
+# Remove top and right borders for a cleaner look
+sns.despine()
+
+plt.tight_layout()
+
+# Save as PDF (Vector format, never loses quality in LaTeX)
+plt.savefig("ssc_lif_statistics.pdf", bbox_inches='tight')
+print("Saved figure to ssc_lif_statistics.pdf")
